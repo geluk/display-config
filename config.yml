@@ -1,0 +1,7 @@
+configurations:
+- name: lorentz-home-4k
+  monitors:
+  - dimensions: width = 1920 and height = 1080
+    alias: m0
+  - dimensions: width = 3840 and height = 2160
+    alias: m1
