@@ -1,0 +1,270 @@
+use std::fmt::Display;
+
+use crate::lexer::{self, Literal, Op, Token};
+use anyhow::{anyhow, bail, Result};
+use log::debug;
+
+/// Result type for match parsers
+type PResult<'a, T> = Result<(&'a [Token], T)>;
+
+pub type Number = u32;
+
+#[derive(Debug)]
+pub struct MatchRule {
+    pub expression: Expr,
+    pub original_input: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Expr {
+    Literal(Literal),
+    Ident(String),
+    Nested(Box<Expr>),
+    Binary(Box<BinExpr>),
+    Unary(Box<UnExpr>),
+}
+impl Display for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::Literal(lit) => write!(f, "{}", lit),
+            Expr::Ident(id) => write!(f, "{}", id),
+            Expr::Nested(expr) => write!(f, "{}", expr),
+            Expr::Binary(bin) => write!(f, "{}", bin),
+            Expr::Unary(un) => write!(f, "{}", un),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct UnExpr {
+    pub operator: Op,
+    pub right: Expr,
+}
+impl Display for UnExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({} {})", self.operator, self.right)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct BinExpr {
+    pub left: Expr,
+    pub operator: Op,
+    pub right: Expr,
+}
+impl Display for BinExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({} {} {})", self.left, self.operator, self.right)
+    }
+}
+
+pub fn parse(input: &str) -> Result<MatchRule> {
+    debug!("Parsing match rule: '{}'", input);
+    let tokens = lexer::lex(input)?;
+
+    let expression = match_rule(tokens)?;
+    Ok(MatchRule {
+        expression,
+        original_input: input.to_string(),
+    })
+}
+
+fn match_rule(tokens: Vec<Token>) -> Result<Expr> {
+    let (tokens, expr) = expr(&tokens, 0)?;
+    if tokens.len() > 0 {
+        bail!("Parser did not consume all tokens.");
+    }
+    Ok(expr)
+}
+
+fn expr(tokens: &[Token], prev_p: u8) -> PResult<Expr> {
+    // We're beginning a new (sub)expression. Let's start by trying to build
+    // an atomic expression out of the first token.
+    let (mut tokens, token) = next(tokens)?;
+    let mut lhs = match token {
+        // These are easy enough.
+        Token::Literal(lit) => Expr::Literal(*lit),
+        Token::Ident(ident) => Expr::Ident(ident.clone()),
+        // We've encountered an operator already, try to treat it as a unary
+        // operator.
+        Token::Op(op) => {
+            let rp = get_unop_power(*op)?;
+            let rhs;
+            (tokens, rhs) = expr(tokens, rp)?;
+            Expr::Unary(Box::new(UnExpr {
+                operator: *op,
+                right: rhs,
+            }))
+        }
+        Token::Sep(_sep) => todo!("Handle separators"),
+    };
+
+    loop {
+        // The next token should either be a valid operator,
+        // or the end of the expression. Let's try looking for that.
+        let op = match peek_next_op(tokens)? {
+            // We found an operator.
+            Some(op) => op,
+            // No tokens left, finish the expression.
+            None => return Ok((tokens, lhs)),
+        };
+        // Next, figure out what to do with the operator.
+        let (lp, rp) = get_binop_power(op)?;
+        if lp < prev_p {
+            // The next operator is weaker than the previous one we found,
+            // so we'll finish the current expression and leave the next
+            // operator to be processed later.
+            break;
+        }
+        // Due to the binding power rules we've defined, it's not possible for
+        // the next operator to be equally strong, so it has to be stronger.
+        // That means we should create a new expression based on the lhs we've
+        // built up to this point, the token we just discovered, and anything
+        // that may come after that token.
+
+        // We know we're going to use the operator now, so we can consume the
+        // token.
+        tokens = &tokens[1..];
+
+        let rhs;
+        // Raise the minimum binding power to that of the rhs,
+        // and start evaluating everything that comes after the operator.
+        // Depending on precedence, this may instantly produce the next atomic
+        // expression, or it may continue to  expand the right-hand-side
+        // until it finds a weaker token. Whatever it ends up producing can be
+        // used as the rhs for our expression.
+        (tokens, rhs) = expr(tokens, rp)?;
+
+        // Cons the new expression onto the existing left-hand-side expression.
+        lhs = Expr::Binary(Box::new(BinExpr {
+            left: lhs,
+            operator: op,
+            right: rhs,
+        }));
+    }
+
+    Ok((tokens, lhs))
+}
+
+fn get_unop_power(op: Op) -> Result<u8> {
+    Ok(match op {
+        Op::Not => 5,
+        op => bail!("Not a unary operator: '{}'", op),
+    })
+}
+
+fn get_binop_power(op: Op) -> Result<(u8, u8)> {
+    Ok(match op {
+        Op::Or => (1, 2),
+        Op::And => (3, 4),
+        Op::Eq | Op::Neq => (7, 8),
+        Op::Gt | Op::Lt | Op::Gte | Op::Lte => (9, 10),
+        op => bail!("Not a binary operator: '{}'", op),
+    })
+}
+
+fn peek_next_op(tokens: &[Token]) -> Result<Option<Op>> {
+    let op = match peek(tokens) {
+        Some(Token::Op(op)) => Some(*op),
+        Some(token) => bail!("Invalid token: {:?} (expected binary operator)", token),
+        None => None,
+    };
+    Ok(op)
+}
+
+fn peek(tokens: &[Token]) -> Option<&Token> {
+    if tokens.len() > 0 {
+        Some(&tokens[0])
+    } else {
+        None
+    }
+}
+
+fn next(tokens: &[Token]) -> PResult<&Token> {
+    tokens
+        .get(0)
+        .ok_or_else(|| anyhow!("Expected another token"))
+        .map(|t| (&tokens[1..], t))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    type TResult = Result<()>;
+
+    #[test]
+    fn expr_range() -> TResult {
+        let tokens = lexer::lex("a < b < c")?;
+        let (tokens, result) = expr(&tokens, 0)?;
+        println!("{}", result);
+
+        assert_eq!(tokens, []);
+        Ok(())
+    }
+
+    #[test]
+    fn expr_simple_comparison_parses() -> TResult {
+        let tokens = lexer::lex("123 > something")?;
+        let (tokens, result) = expr(&tokens, 0)?;
+        println!("{}", result);
+
+        assert_eq!(tokens, vec![]);
+        assert_eq!(result.to_string(), "(123 > something)");
+        Ok(())
+    }
+
+    #[test]
+    fn expr_boolean_gt_correct_precedence() -> TResult {
+        let tokens = lexer::lex("left and 123 > something")?;
+        let (tokens, result) = expr(&tokens, 0)?;
+        println!("{}", result);
+
+        assert_eq!(tokens, vec![]);
+        assert_eq!(result.to_string(), "(left and (123 > something))");
+        Ok(())
+    }
+
+    #[test]
+    fn expr_gt_boolean_correct_precedence() -> TResult {
+        let tokens = lexer::lex("left > 123 and something")?;
+        let (tokens, result) = expr(&tokens, 0)?;
+        println!("{}", result);
+
+        assert_eq!(tokens, vec![]);
+        assert_eq!(result.to_string(), "((left > 123) and something)");
+        Ok(())
+    }
+
+    #[test]
+    fn expr_unop_comp_parses() -> TResult {
+        let tokens = lexer::lex("not 10 > 15")?;
+        let (tokens, result) = expr(&tokens, 0)?;
+        println!("{}", result);
+
+        assert_eq!(tokens, vec![]);
+        assert_eq!(result.to_string(), "(not (10 > 15))");
+        Ok(())
+    }
+
+    #[test]
+    fn expr_unop_and_parses() -> TResult {
+        let tokens = lexer::lex("right and not left and right")?;
+        let (tokens, result) = expr(&tokens, 0)?;
+        println!("{}", result);
+
+        assert_eq!(tokens, vec![]);
+        assert_eq!(result.to_string(), "((right and (not left)) and right)");
+        Ok(())
+    }
+
+    #[test]
+    fn expr_literal_parses() -> TResult {
+        let tokens = lexer::lex("123")?;
+        let (tokens, result) = expr(&tokens, 0)?;
+
+        assert_eq!(tokens, []);
+        assert_eq!(result, Expr::Literal(Literal::Number(123)));
+        Ok(())
+    }
+}

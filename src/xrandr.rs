@@ -5,12 +5,15 @@ use x11rb::{
     protocol::{
         randr::{self, ConnectionExt, GetScreenResourcesReply, ModeFlag, ModeInfo},
         render::SubPixel,
-        xproto::{self, Window},
+        xproto::{self, Timestamp, Window},
     },
     rust_connection::RustConnection,
 };
 
 use crate::xorg::X11Wrapper;
+
+const EDID_NAME: &str = "EDID";
+const EDID_LENGTH_BYTES: u32 = 256;
 
 /// An Xorg XID
 pub type Xid = u32;
@@ -18,8 +21,6 @@ pub type Xid = u32;
 pub type RefreshRate = f32;
 /// Flags indicating the rotation/reflection of a CRTC
 pub type Rotation = u16;
-
-pub type Timestamp = xproto::Timestamp;
 
 pub struct Xrandr<'conn> {
     conn: &'conn RustConnection,
@@ -36,22 +37,45 @@ pub struct Crtc {
 }
 
 #[derive(Debug, Clone)]
-pub struct Output {
+pub enum Output {
+    Connected(ConnectedOutput),
+    Disconnected(UnknownOutput),
+    Unknown(UnknownOutput),
+}
+
+/// An output with an active monitor, that is connected to the display adapter.
+#[derive(Debug, Clone)]
+pub struct ConnectedOutput {
+    /// The XID of the output.
     pub id: Xid,
+    /// Name of the output adapter, e.g. DP-1.
     pub name: String,
-    pub dimensions: Option<Dimensions>,
-    pub connection: Connection,
-    pub active: bool,
+    /// Physical dimensions of the monitor connected to the output.
+    pub dimensions: Dimensions,
+    /// The CRTC this output is bound to, if any.
     pub crtc: Option<Crtc>,
+    /// Subpixel order of the output, if known.
     pub subpixel_order: SubPixel,
+    /// An output may not have a preferred mode.
+    pub edid: Option<Vec<u8>>,
     pub preferred_mode: Option<Mode>,
+    /// Modes supported by this output. An output can only be connected to a
+    /// CRTC if it supports the mode that is currently being used by the CRTC.
     pub supported_modes: Vec<Mode>,
 }
 
-impl Output {
-    pub fn is_connected(&self) -> bool {
-        matches!(self.connection, Connection::Connected)
+impl ConnectedOutput {
+    /// Returns whether the output is currently bound to a CRTC.
+    pub fn is_active(&self) -> bool {
+        self.crtc.is_some()
     }
+}
+
+/// An output that is either disconnected or in an unknown state.
+#[derive(Debug, Clone)]
+pub struct UnknownOutput {
+    pub id: Xid,
+    pub name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -75,13 +99,6 @@ pub struct Rectangle {
 }
 
 #[derive(Debug, Clone)]
-pub enum Connection {
-    Connected,
-    Disconnected,
-    Unknown,
-}
-
-#[derive(Debug, Clone)]
 pub struct Mode {
     pub id: Xid,
     pub resolution: Resolution,
@@ -91,7 +108,7 @@ pub struct Mode {
 }
 
 impl Mode {
-    pub fn is_active_on(&self, output: &Output) -> bool {
+    pub fn is_active_on(&self, output: &ConnectedOutput) -> bool {
         output
             .crtc
             .as_ref()
@@ -99,7 +116,7 @@ impl Mode {
             .map_or(false, |m| m == self)
     }
 
-    pub fn is_preferred_by(&self, output: &Output) -> bool {
+    pub fn is_preferred_by(&self, output: &ConnectedOutput) -> bool {
         output.preferred_mode.as_ref().map_or(false, |m| m == self)
     }
 }
@@ -119,7 +136,18 @@ impl<'conn> Xrandr<'conn> {
         }
     }
 
-    pub fn get_configuration(&self) -> Result<Vec<Output>> {
+    pub fn get_connected_outputs(&self) -> Result<Vec<ConnectedOutput>> {
+        Ok(self
+            .get_all_outputs()?
+            .into_iter()
+            .filter_map(|o| match o {
+                Output::Connected(out) => Some(out),
+                _ => None,
+            })
+            .collect())
+    }
+
+    pub fn get_all_outputs(&self) -> Result<Vec<Output>> {
         let resources = self.get_screen_resources()?;
 
         let modes = resources
@@ -225,24 +253,29 @@ impl<'conn> Xrandr<'conn> {
         let cookie = self.conn.randr_get_output_info(id, timestamp)?;
         let reply = cookie.reply().context("Failed to get output info")?;
 
-        let connection = match reply.connection {
-            randr::Connection::DISCONNECTED => Connection::Disconnected,
-            randr::Connection::CONNECTED => Connection::Connected,
-            randr::Connection::UNKNOWN => Connection::Unknown,
-            other => bail!("Invalid connection status: {:?}", other),
-        };
+        let name = String::from_utf8(reply.name.clone())?;
 
-        let dimensions = match connection {
-            Connection::Disconnected => None,
-            _ => Some(Dimensions::new(reply.mm_width, reply.mm_height)),
-        };
+        // println!("CONNECTED: {:#?}", reply)
+        match reply.connection {
+            randr::Connection::CONNECTED => (),
+            randr::Connection::DISCONNECTED => {
+                return Ok(Output::Disconnected(UnknownOutput { id, name }));
+            }
+            _ => return Ok(Output::Unknown(UnknownOutput { id, name })),
+        }
+
+        let dimensions = Dimensions::new(reply.mm_width, reply.mm_height);
 
         let crtc = match &reply.crtc {
             0 => None,
             xid => Some(
                 crtcs
                     .get(xid)
-                    .ok_or_else(|| anyhow!("Could not find CRTC {} for output {}", reply.crtc, id))?
+                    .ok_or(anyhow!(
+                        "Could not find CRTC {} for output {}",
+                        reply.crtc,
+                        id
+                    ))?
                     .clone(),
             ),
         };
@@ -271,17 +304,61 @@ impl<'conn> Xrandr<'conn> {
             })
             .collect::<Result<_>>()?;
 
-        Ok(Output {
+        let edid = self.create_edid(id)?;
+
+        Ok(Output::Connected(ConnectedOutput {
             id,
-            name: String::from_utf8(reply.name)?,
+            name,
             dimensions,
-            connection,
-            active: reply.crtc != 0,
             crtc,
             subpixel_order: reply.subpixel_order,
+            edid,
             preferred_mode,
             supported_modes,
-        })
+        }))
+    }
+
+    fn create_edid(&self, id: randr::Output) -> Result<Option<Vec<u8>>> {
+        let properties = self.conn.randr_list_output_properties(id)?.reply()?;
+        for atom in &properties.atoms {
+            let name = String::from_utf8(
+                xproto::ConnectionExt::get_atom_name(self.conn, *atom)?
+                    .reply()?
+                    .name,
+            )?;
+
+            if name == EDID_NAME {
+                let prop = self
+                    .conn
+                    .randr_get_output_property::<u32>(
+                        id,
+                        *atom,
+                        0,
+                        0,
+                        // Xorg property length represents the number of 32-bit
+                        // integers that fit in it (not the number of bytes)
+                        // so we divide by four here.
+                        EDID_LENGTH_BYTES / 4,
+                        false,
+                        false,
+                    )?
+                    .reply()?;
+
+                if prop.bytes_after > 0 {
+                    // This should be downgraded to a warning once we support
+                    // generating warnings.
+                    bail!(
+                        "Edid length of {} bytes greater than expected ({} bytes)",
+                        // See above for the significance of multiplying by four.
+                        prop.length * 4 + prop.bytes_after,
+                        EDID_LENGTH_BYTES
+                    );
+                }
+                return Ok(Some(prop.data));
+            }
+        }
+
+        Ok(None)
     }
 }
 

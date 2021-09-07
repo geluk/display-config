@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use log::debug;
 use x11rb::{connection::Connection, protocol::xproto::Screen, rust_connection::RustConnection};
 
 pub struct X11Wrapper {
@@ -22,8 +23,13 @@ pub fn connect() -> Result<X11Wrapper> {
     if roots.len() > 1 {
         bail!("Using multiple X11 roots is not supported yet")
     }
-
     let root = (&roots[0]).clone();
+
+    debug!("Connected to X11 - screen: {}, vendor: {}", screen, vendor);
+    debug!(
+        "Root window is {} × {}",
+        root.width_in_pixels, root.height_in_pixels
+    );
     Ok(X11Wrapper {
         connection,
         vendor,

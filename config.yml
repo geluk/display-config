@@ -1,7 +1,19 @@
 configurations:
+- name: planck-default
+  require_monitors:
+  - alias: int
+    output: INT-1
+  - alias: never
+    output: NEVER
 - name: lorentz-home-4k
-  monitors:
-  - dimensions: width = 1920 and height = 1080
-    alias: m0
-  - dimensions: width = 3840 and height = 2160
-    alias: m1
+  require_monitors:
+  - alias: m0
+    output: DVI-I-1
+    match: width = 1920 and height = 1080
+  - alias: m1
+    output: DP-4
+    match:
+    - width = 3840 and height = 2160
+    # - width = 1920 and height = 1080
+    # - preferred_mode = 1920x1080:60
+    # - not modes has 1920x1080

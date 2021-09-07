@@ -1,13 +1,22 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 
-use crate::match_rule_parser::{BoolOp, Cmp, CompoundExpr, Expr, MatchRule, NumOp, Number, Value};
+use crate::{
+    lexer::{Literal, Op},
+    parser::*,
+};
 
-pub type Variables = HashMap<&'static str, Number>;
+pub type Variables = HashMap<&'static str, Value>;
 
 pub struct Evaluator {
     variables: Variables,
+}
+
+#[derive(Clone, Copy)]
+pub enum Value {
+    Number(Number),
+    Bool(bool),
 }
 
 impl Evaluator {
@@ -15,69 +24,115 @@ impl Evaluator {
         Self { variables }
     }
     pub fn evaluate(&self, rule: &MatchRule) -> Result<bool> {
-        self.evaluate_expr(&rule.expression)
+        match self.evaluate_expr(&rule.expression)? {
+            Value::Number(_) => {
+                bail!("Expected match rule to produce a boolean, but got a number.")
+            }
+            Value::Bool(b) => Ok(b),
+        }
     }
 
-    fn evaluate_expr(&self, expr: &Expr) -> Result<bool> {
+    fn evaluate_expr(&self, expr: &Expr) -> Result<Value> {
         match expr {
-            Expr::Comparison(cmp) => self.evaluate_comparison(cmp),
-            Expr::CompoundExpr(cpd) => self.evaluate_compound(cpd),
+            Expr::Nested(inner) => self.evaluate_expr(inner),
+            Expr::Binary(op) => self.evaluate_binary(op),
+            Expr::Unary(un) => self.evaluate_unary(un),
+            Expr::Literal(lit) => self.evaluate_literal(*lit),
+            Expr::Ident(id) => self.evaluate_ident(id.clone()),
         }
     }
 
-    fn evaluate_compound(&self, cpd: &CompoundExpr) -> Result<bool> {
-        let left = self.evaluate_expr(&cpd.left)?;
-        Ok(match cpd.operator {
-            BoolOp::And => left && self.evaluate_expr(&cpd.right)?,
-            BoolOp::Or => left || self.evaluate_expr(&cpd.right)?,
+    fn evaluate_binary(&self, bin: &BinExpr) -> Result<Value> {
+        let left = self.evaluate_expr(&bin.left)?;
+        let right = self.evaluate_expr(&bin.right)?;
+        let outcome = match (left, right) {
+            (Value::Number(ln), Value::Number(rn)) => match bin.operator {
+                Op::Eq => ln == rn,
+                Op::Neq => ln != rn,
+                Op::Gt => ln > rn,
+                Op::Lt => ln < rn,
+                Op::Gte => ln >= rn,
+                Op::Lte => ln <= rn,
+                _ => bail!("Invalid operands for '{}'", bin.operator),
+            },
+            (Value::Bool(lb), Value::Bool(rb)) => match bin.operator {
+                Op::And => lb && rb,
+                Op::Or => lb || rb,
+                _ => bail!("Invalid operands for '{}'", bin.operator),
+            },
+            (Value::Number(_), Value::Bool(_)) | (Value::Bool(_), Value::Number(_)) => {
+                bail!("Unable to compare boolean with number");
+            }
+        };
+
+        Ok(Value::Bool(outcome))
+    }
+
+    fn evaluate_unary(&self, un: &UnExpr) -> Result<Value> {
+        let val = self.evaluate_expr(&un.right)?;
+        Ok(match val {
+            Value::Number(_) => {
+                bail!("Invalid operand for '{}'", un.operator);
+            }
+            Value::Bool(v) => match un.operator {
+                Op::Not => Value::Bool(!v),
+                _ => bail!("Invalid operands for '{}'", un.operator),
+            },
         })
     }
 
-    fn evaluate_comparison(&self, cmp: &Cmp) -> Result<bool> {
-        let left = self.evaluate_value(&cmp.left)?;
-        let right = self.evaluate_value(&cmp.right)?;
-
-        Ok(match cmp.operator {
-            NumOp::Eq => left == right,
-            NumOp::Gt => left > right,
-            NumOp::Lt => left < right,
-            NumOp::Gte => left >= right,
-            NumOp::Lte => left <= right,
-        })
-    }
-
-    fn evaluate_value(&self, val: &Value) -> Result<Number> {
-        match val {
-            Value::Variable(var) => self
-                .variables
-                .get(var.as_str())
-                .copied()
-                .ok_or_else(|| anyhow!("Unknown variable: '{}'", var)),
-            Value::Number(num) => Ok(*num),
+    fn evaluate_literal(&self, lit: Literal) -> Result<Value> {
+        match lit {
+            Literal::Number(num) => Ok(Value::Number(num)),
         }
+    }
+
+    fn evaluate_ident(&self, id: String) -> Result<Value> {
+        Ok(self
+            .variables
+            .get::<str>(&id)
+            .copied()
+            .ok_or_else(|| anyhow!("Unknown variable: '{}'", id))?)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::match_rule_parser;
+    use crate::parser;
 
     use super::*;
 
     #[test]
     fn evaluate_unbound_variable_error() {
         let variables = HashMap::new();
-        let rule = match_rule_parser::parse("width >= 1920 and height >= 1080").unwrap();
+        let rule = parser::parse("width >= 1920 and height >= 1080").unwrap();
         let evaluator = Evaluator::new(variables);
 
         evaluator.evaluate(&rule).unwrap_err();
     }
 
     #[test]
-    fn evaluate_expr_is_true() {
-        let variables = HashMap::from([("width", 1920), ("height", 1080)]);
+    fn evaluate_not_negates() {
+        let variables = HashMap::from([
+            ("width", Value::Number(1920)),
+            ("height", Value::Number(1080)),
+        ]);
 
-        let expr = match_rule_parser::parse("width >= 1920 and height >= 1080").unwrap();
+        let expr = parser::parse("not 10 > 15 or 10 > 20").unwrap();
+        let evaluator = Evaluator::new(variables);
+        let res = evaluator.evaluate(&expr).unwrap();
+
+        assert!(res);
+    }
+
+    #[test]
+    fn evaluate_expr_is_true() {
+        let variables = HashMap::from([
+            ("width", Value::Number(1920)),
+            ("height", Value::Number(1080)),
+        ]);
+
+        let expr = parser::parse("width >= 1920 and height >= 1080").unwrap();
         let evaluator = Evaluator::new(variables);
         let res = evaluator.evaluate(&expr).unwrap();
 
@@ -86,9 +141,12 @@ mod test {
 
     #[test]
     fn evaluate_expr_is_false() {
-        let variables = HashMap::from([("width", 1920), ("height", 1080)]);
+        let variables = HashMap::from([
+            ("width", Value::Number(1920)),
+            ("height", Value::Number(1080)),
+        ]);
 
-        let expr = match_rule_parser::parse("width > 1920 or height > 1080").unwrap();
+        let expr = parser::parse("width > 1920 or height > 1080").unwrap();
         let evaluator = Evaluator::new(variables);
         let res = evaluator.evaluate(&expr).unwrap();
 

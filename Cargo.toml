@@ -3,11 +3,12 @@ name = "display-config"
 version = "0.1.0"
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 x11rb = { version = "0.9", features = ["randr"] }
 anyhow = { version = "1.0" }
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.8"
 nom = "7.0"
+log = "0.4"
+stderrlog = "0.5"
+structopt = "0.3"
