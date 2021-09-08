@@ -18,7 +18,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Result};
 use configuration::Setup;
-use log::{debug, info, trace};
+use log::{debug, error, info, trace};
 use matcher::MatchedMonitor;
 
 use crate::{configuration::ConfigurationRoot, xrandr::Output, xrandr::Xrandr};
@@ -60,7 +60,7 @@ fn main() -> Result<()> {
             )?;
 
             match matching_setup {
-                Some((setup, monitors)) => apply(setup, monitors, opt.dry_run)?,
+                Some((setup, monitors)) => apply(setup, monitors, opt.dry_run),
                 None => {
                     bail!("No setup matches the current configuration")
                 }
@@ -71,7 +71,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn apply(setup: &Setup, monitors: Vec<MatchedMonitor>, dry_run: bool) -> Result<()> {
+fn apply(setup: &Setup, monitors: Vec<MatchedMonitor>, dry_run: bool) {
     info!("Applying setup: '{}'", setup.name);
     let mut env = HashMap::new();
     for monitor in monitors.iter() {
@@ -90,12 +90,18 @@ fn apply(setup: &Setup, monitors: Vec<MatchedMonitor>, dry_run: bool) -> Result<
         for cmd in setup.apply_commands.iter() {
             eprintln!("Execute: '{}'", cmd);
         }
-        Ok(())
     } else {
-        setup
+        let result = setup
             .apply_commands
             .iter()
-            .try_for_each(|c| execute_command(c, &env))
+            .try_for_each(|c| execute_command(c, &env));
+
+        if let Err(err) = result {
+            error!(
+                "Unable to apply '{}': a command exited with a nonzero status.",
+                setup.name
+            );
+        }
     }
 }
 
