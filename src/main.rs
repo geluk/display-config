@@ -93,12 +93,11 @@ fn apply(setup: &Setup, monitors: Vec<MatchedMonitor>, dry_run: bool) -> Result<
         setup
             .apply_commands
             .iter()
-            .map(|c| execute_command(c, &env))
-            .collect()
+            .try_for_each(|c| execute_command(c, &env))
     }
 }
 
-fn execute_command(command: &String, environment: &HashMap<String, &String>) -> Result<()> {
+fn execute_command(command: &str, environment: &HashMap<String, &String>) -> Result<()> {
     debug!("Executing command: '{}'", command);
     let cmd = Command::new("bash")
         .args(&["-c", command])
