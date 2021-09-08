@@ -13,10 +13,21 @@ pub struct Evaluator {
     variables: Variables,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum Value {
     Number(Number),
     Bool(bool),
+    String(String),
+}
+
+impl Value {
+    fn type_name(&self) -> &'static str {
+        match self {
+            Value::Number(_) => "number",
+            Value::Bool(_) => "boolean",
+            Value::String(_) => "string",
+        }
+    }
 }
 
 impl Evaluator {
@@ -25,10 +36,13 @@ impl Evaluator {
     }
     pub fn evaluate(&self, rule: &MatchRule) -> Result<bool> {
         match self.evaluate_expr(&rule.expression)? {
-            Value::Number(_) => {
-                bail!("Expected match rule to produce a boolean, but got a number.")
-            }
             Value::Bool(b) => Ok(b),
+            v => {
+                bail!(
+                    "Expected match rule to produce a boolean, but got a {}",
+                    v.type_name()
+                )
+            }
         }
     }
 
@@ -36,7 +50,7 @@ impl Evaluator {
         match expr {
             Expr::Binary(op) => self.evaluate_binary(op),
             Expr::Unary(un) => self.evaluate_unary(un),
-            Expr::Literal(lit) => self.evaluate_literal(*lit),
+            Expr::Literal(lit) => self.evaluate_literal(lit),
             Expr::Ident(id) => self.evaluate_ident(id.clone()),
         }
     }
@@ -45,22 +59,26 @@ impl Evaluator {
         let left = self.evaluate_expr(&bin.left)?;
         let right = self.evaluate_expr(&bin.right)?;
         let outcome = match (left, right) {
-            (Value::Number(ln), Value::Number(rn)) => match bin.operator {
-                Op::Eq => ln == rn,
-                Op::Neq => ln != rn,
-                Op::Gt => ln > rn,
-                Op::Lt => ln < rn,
-                Op::Gte => ln >= rn,
-                Op::Lte => ln <= rn,
+            (Value::Number(l), Value::Number(r)) => match bin.operator {
+                Op::Eq => l == r,
+                Op::Neq => l != r,
+                Op::Gt => l > r,
+                Op::Lt => l < r,
+                Op::Gte => l >= r,
+                Op::Lte => l <= r,
                 _ => bail!("Invalid operands for '{}'", bin.operator),
             },
-            (Value::Bool(lb), Value::Bool(rb)) => match bin.operator {
-                Op::And => lb && rb,
-                Op::Or => lb || rb,
+            (Value::Bool(l), Value::Bool(r)) => match bin.operator {
+                Op::And => l && r,
+                Op::Or => l || r,
                 _ => bail!("Invalid operands for '{}'", bin.operator),
             },
-            (Value::Number(_), Value::Bool(_)) | (Value::Bool(_), Value::Number(_)) => {
-                bail!("Unable to compare boolean with number");
+            (Value::String(l), Value::String(r)) => match bin.operator {
+                Op::Eq => l == r,
+                _ => bail!("Invalid operands for '{}'", bin.operator),
+            },
+            (l, r) => {
+                bail!("Unable to compare {} with {}", l.type_name(), r.type_name());
             }
         };
 
@@ -70,27 +88,28 @@ impl Evaluator {
     fn evaluate_unary(&self, un: &UnExpr) -> Result<Value> {
         let val = self.evaluate_expr(&un.right)?;
         Ok(match val {
-            Value::Number(_) => {
-                bail!("Invalid operand for '{}'", un.operator);
-            }
             Value::Bool(v) => match un.operator {
                 Op::Not => Value::Bool(!v),
-                _ => bail!("Invalid operands for '{}'", un.operator),
+                _ => bail!("Invalid operand for '{}'", un.operator),
             },
+            _ => {
+                bail!("Invalid operand for '{}'", un.operator);
+            }
         })
     }
 
-    fn evaluate_literal(&self, lit: Literal) -> Result<Value> {
+    fn evaluate_literal(&self, lit: &Literal) -> Result<Value> {
         match lit {
-            Literal::Number(num) => Ok(Value::Number(num)),
-            Literal::Bool(b) => Ok(Value::Bool(b)),
+            Literal::Number(num) => Ok(Value::Number(*num)),
+            Literal::Bool(b) => Ok(Value::Bool(*b)),
+            Literal::String(str) => Ok(Value::String(str.clone())),
         }
     }
 
     fn evaluate_ident(&self, id: String) -> Result<Value> {
         self.variables
             .get::<str>(&id)
-            .copied()
+            .cloned()
             .ok_or_else(|| anyhow!("Unknown variable: '{}'", id))
     }
 }

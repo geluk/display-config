@@ -5,11 +5,11 @@ use log::trace;
 use nom::{
     branch::*,
     bytes::complete::*,
-    character,
+    character::{self, complete::one_of},
     combinator::{all_consuming, map, map_parser},
     error::{context, convert_error, ErrorKind, ParseError, VerboseError},
     multi::many0,
-    sequence::terminated,
+    sequence::{delimited, terminated},
     Err, Finish, IResult,
 };
 
@@ -42,17 +42,18 @@ impl Display for Token {
 }
 
 /// A literal, representing a value.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Literal {
     Number(u32),
     Bool(bool),
-    // TODO: add string and others
+    String(String),
 }
 impl Display for Literal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Literal::Number(n) => write!(f, "{}", n),
             Literal::Bool(b) => write!(f, "{}", b),
+            Literal::String(s) => write!(f, "\"{}\"", s.replace("\"", "\\\"")),
         }
     }
 }
@@ -171,10 +172,30 @@ pub fn variable(input: &str) -> MResult<String> {
 /// Reads a literal. Returns the value of the literal.
 pub fn literal(input: &str) -> MResult<Literal> {
     let number = map(character::complete::u32, Literal::Number);
-    let b_true = keyword("true", Literal::Bool(true));
-    let b_false = keyword("false", Literal::Bool(false));
+    let b_true = map(keyword("true"), |_| Literal::Bool(true));
+    let b_false = map(keyword("false"), |_| Literal::Bool(false));
+    let string = map(string, |str| Literal::String(str.to_string()));
 
-    alt((number, b_true, b_false))(input)
+    alt((number, b_true, b_false, string))(input)
+}
+
+/// Reads a string literal.
+pub fn string(input: &str) -> MResult<&str> {
+    delimited(
+        tag(r#"""#),
+        escaped(
+            // This tag matches the normal (non-control) characters.
+            is_not(r#"\""#),
+            // This tag matches the control character.
+            '\\',
+            // This tag matches the escaped characters:
+            // \   : because it's already used as a control character
+            // "   : because we need to be able to escape quotes
+            // rnt : to provide an easy way to insert common whitespace characters
+            one_of(r#"\"rnt"#),
+        ),
+        tag(r#"""#),
+    )(input)
 }
 
 /// Reads a separator.
@@ -193,9 +214,9 @@ pub fn op(input: &str) -> MResult<Op> {
     let neq = map_token("!=", Op::Neq);
     let gt = map_token(">", Op::Gt);
     let lt = map_token("<", Op::Lt);
-    let and = keyword("and", Op::And);
-    let or = keyword("or", Op::Or);
-    let not = keyword("not", Op::Not);
+    let and = map(keyword("and"), |_| Op::And);
+    let or = map(keyword("or"), |_| Op::Or);
+    let not = map(keyword("not"), |_| Op::Not);
 
     context(
         "binary operator (expected any of: =, >, <, >=, <=, 'and', 'or')",
@@ -215,14 +236,8 @@ where
 /// the given keyword. Only succeeds if the read string exactly matches the
 /// keyword. This prevents 'anders' from being recognised as the keyword 'and',
 /// for instance.
-pub fn keyword<'i, Tok>(keyword: &'i str, token: Tok) -> impl FnMut(&'i str) -> MResult<Tok>
-where
-    Tok: Copy,
-{
-    map(
-        map_parser(keyword_pattern, all_consuming(tag(keyword))),
-        move |_| token,
-    )
+pub fn keyword<'i>(keyword: &'i str) -> impl FnMut(&'i str) -> MResult<&'i str> {
+    map_parser(keyword_pattern, all_consuming(tag(keyword)))
 }
 
 /// Returns the longest slice that can be considered a valid keyword.
@@ -331,6 +346,90 @@ mod test {
         let (output, result) = variable(value).unwrap();
         assert_eq!(output, ">test");
         assert_eq!(result, "end");
+    }
+
+    // literal tests
+    // -------------
+    #[test]
+    fn literal_number_parses() {
+        let value = "12320";
+        let (output, result) = literal(value).unwrap();
+        assert_eq!(output, "");
+        assert_eq!(result, Literal::Number(12320));
+    }
+
+    #[test]
+    fn literal_bool_true_parses() {
+        let value = "true";
+        let (output, result) = literal(value).unwrap();
+        assert_eq!(output, "");
+        assert_eq!(result, Literal::Bool(true));
+    }
+
+    #[test]
+    fn literal_bool_false_parses() {
+        let value = "false";
+        let (output, result) = literal(value).unwrap();
+        assert_eq!(output, "");
+        assert_eq!(result, Literal::Bool(false));
+    }
+
+    #[test]
+    fn literal_string_parses() {
+        let value = r#""a\" test\\ \n\rstring""#;
+        let (output, result) = literal(value).unwrap();
+        assert_eq!(output, "");
+        assert_eq!(
+            result,
+            Literal::String(String::from(r#"a\" test\\ \n\rstring"#))
+        );
+    }
+
+    // string tests
+    // ------------
+    #[test]
+    fn string_parses() {
+        let value = r#""Hello there!""#;
+        let (output, result) = string(value).unwrap();
+        assert_eq!(output, "");
+        assert_eq!(result, "Hello there!");
+    }
+
+    #[test]
+    fn string_escaped_backslash_parses() {
+        let value = r#""a \\ backslash""#;
+        let (output, result) = string(value).unwrap();
+        assert_eq!(output, "");
+        assert_eq!(result, r#"a \\ backslash"#);
+    }
+
+    #[test]
+    fn string_escaped_quote_parses() {
+        let value = r#""a \" double quote""#;
+        let (output, result) = string(value).unwrap();
+        assert_eq!(output, "");
+        assert_eq!(result, r#"a \" double quote"#);
+    }
+
+    #[test]
+    fn string_escape_unclosed_fails() {
+        let value = r#""\""#;
+        let error = string(value).unwrap_err();
+        println!("{}", error);
+    }
+
+    #[test]
+    fn string_invalid_escape_fails() {
+        let value = r#""\y""#;
+        let error = string(value).unwrap_err();
+        println!("{}", error);
+    }
+
+    #[test]
+    fn string_no_quotes_fails() {
+        let value = r#"yes"#;
+        let error = string(value).unwrap_err();
+        println!("{}", error);
     }
 
     // bin_op tests
