@@ -16,9 +16,9 @@ use std::{
     process::{Command, Stdio},
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use configuration::Setup;
-use log::{debug, info, trace, warn};
+use log::{debug, info, trace};
 use matcher::MatchedMonitor;
 
 use crate::{configuration::ConfigurationRoot, xrandr::Output, xrandr::Xrandr};
@@ -61,7 +61,9 @@ fn main() -> Result<()> {
 
             match matching_setup {
                 Some((setup, monitors)) => apply(setup, monitors, opt.dry_run)?,
-                None => warn!("No setup matches the current configuration"),
+                None => {
+                    bail!("No setup matches the current configuration")
+                }
             }
         }
     }
@@ -70,7 +72,7 @@ fn main() -> Result<()> {
 }
 
 fn apply(setup: &Setup, monitors: Vec<MatchedMonitor>, dry_run: bool) -> Result<()> {
-    debug!("Found match");
+    info!("Applying setup: '{}'", setup.name);
     let mut env = HashMap::new();
     for monitor in monitors.iter() {
         debug!("    {} -> {}", monitor.alias, monitor.monitor.name);
