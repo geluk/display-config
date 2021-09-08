@@ -10,15 +10,18 @@ use nom::{
     error::{context, convert_error, ErrorKind, ParseError, VerboseError},
     multi::many0,
     sequence::terminated,
-    Err, Finish, IResult, Parser,
+    Err, Finish, IResult,
 };
 
-/// Result type for match parsers
+/// Result type for match parsers.
 type MResult<'inp, O> = IResult<&'inp str, O, VerboseError<&'inp str>>;
 
+/// All keywords must consist of only these characters.
 const KEYWORD_PATTERN: &str = "abcdefghijklmnopqrstuvwxyz";
+/// All variable names must consist of only these characters.
 const VARIABLE_PATTERN: &str = "abcdefghijklmnopqrstuvwxyz_";
 
+/// A token, as emitted by the lexer.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Token {
     // TODO: emit position information
@@ -38,6 +41,7 @@ impl Display for Token {
     }
 }
 
+/// A literal, representing a value.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Literal {
     Number(u32),
@@ -53,6 +57,7 @@ impl Display for Literal {
     }
 }
 
+/// An operator, either binary or unary.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Op {
     Eq,
@@ -85,6 +90,7 @@ impl Display for Op {
     }
 }
 
+/// A separator. Currently, only parentheses are used.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Sep {
     LParen,
@@ -103,6 +109,8 @@ impl Display for Sep {
     }
 }
 
+/// Given an input string, attempts to lex it into a token stream. Produces
+/// a generic error on failure.
 pub fn lex(input: &str) -> Result<Vec<Token>> {
     let result = token_stream(input).finish();
     match result {
@@ -114,7 +122,9 @@ pub fn lex(input: &str) -> Result<Vec<Token>> {
     }
 }
 
-pub fn token_stream(input: &str) -> MResult<Vec<Token>> {
+/// Given an input string, attempts to lex it into a token stream. Produces
+/// an error with a parsing context on failure.
+fn token_stream(input: &str) -> MResult<Vec<Token>> {
     // Start by eating as much whitespace as possible
     let (input, _) = opt_whitespace(input)?;
     // Now read as many tokens as possible
@@ -132,31 +142,42 @@ pub fn token_stream(input: &str) -> MResult<Vec<Token>> {
     }
 }
 
+/// Reads single token, and consumes as much whitespace following that token
+/// as possible.
 pub fn token_and_whitespace(input: &str) -> MResult<Token> {
     terminated(token, opt_whitespace)(input)
 }
 
+/// Reads a single token.
 pub fn token(input: &str) -> MResult<Token> {
-    let op = map(op, Token::Op);
     let sep = map(separator, Token::Sep);
+    let op = map(op, Token::Op);
     let lit = map(literal, Token::Literal);
     let id = map(variable, Token::Ident);
 
-    alt((op, sep, lit, id))(input)
+    // Order matters here! Attempting to parse variables before operators, for
+    // instance, would result in all text-only operators being recognised as
+    // variables, because they also match the variable parsing rules.
+    // Because of this, we start with the most specific token types, and then
+    // we gradually widen our search.
+    alt((sep, op, lit, id))(input)
 }
 
+/// Reads a variable. Returns a string containing the variable name.
 pub fn variable(input: &str) -> MResult<String> {
     map(is_a(VARIABLE_PATTERN), str::to_string)(input)
 }
 
+/// Reads a literal. Returns the value of the literal.
 pub fn literal(input: &str) -> MResult<Literal> {
     let number = map(character::complete::u32, Literal::Number);
-    let b_true = keyword(tag("true"), Literal::Bool(true));
-    let b_false = keyword(tag("false"), Literal::Bool(false));
+    let b_true = keyword("true", Literal::Bool(true));
+    let b_false = keyword("false", Literal::Bool(false));
 
     alt((number, b_true, b_false))(input)
 }
 
+/// Reads a separator.
 pub fn separator(input: &str) -> MResult<Sep> {
     let lbrace = map_token("(", Sep::LParen);
     let rbrace = map_token(")", Sep::RParen);
@@ -164,6 +185,7 @@ pub fn separator(input: &str) -> MResult<Sep> {
     alt((lbrace, rbrace))(input)
 }
 
+/// Reads an operator.
 pub fn op(input: &str) -> MResult<Op> {
     let gte = map_token(">=", Op::Gte);
     let lte = map_token("<=", Op::Lte);
@@ -171,9 +193,9 @@ pub fn op(input: &str) -> MResult<Op> {
     let neq = map_token("!=", Op::Neq);
     let gt = map_token(">", Op::Gt);
     let lt = map_token("<", Op::Lt);
-    let and = keyword(tag("and"), Op::And);
-    let or = keyword(tag("or"), Op::Or);
-    let not = keyword(tag("not"), Op::Not);
+    let and = keyword("and", Op::And);
+    let or = keyword("or", Op::Or);
+    let not = keyword("not", Op::Not);
 
     context(
         "binary operator (expected any of: =, >, <, >=, <=, 'and', 'or')",
@@ -181,6 +203,7 @@ pub fn op(input: &str) -> MResult<Op> {
     )(input)
 }
 
+/// Maps a tag string to a token.
 pub fn map_token<'i, T>(t: &'i str, token: T) -> impl FnMut(&'i str) -> MResult<T>
 where
     T: Copy,
@@ -188,18 +211,26 @@ where
     map(tag(t), move |_| token)
 }
 
-pub fn keyword<'i, Prs, Out>(p: Prs, o: Out) -> impl FnMut(&'i str) -> MResult<Out>
+/// Reads as many valid keyword characters as possible, and compares them with
+/// the given keyword. Only succeeds if the read string exactly matches the
+/// keyword. This prevents 'anders' from being recognised as the keyword 'and',
+/// for instance.
+pub fn keyword<'i, Tok>(keyword: &'i str, token: Tok) -> impl FnMut(&'i str) -> MResult<Tok>
 where
-    Prs: Parser<&'i str, &'i str, VerboseError<&'i str>>,
-    Out: Copy,
+    Tok: Copy,
 {
-    map(map_parser(keyword_pattern, all_consuming(p)), move |_| o)
+    map(
+        map_parser(keyword_pattern, all_consuming(tag(keyword))),
+        move |_| token,
+    )
 }
 
+/// Returns the longest slice that can be considered a valid keyword.
 pub fn keyword_pattern(input: &str) -> MResult<&str> {
     is_a(KEYWORD_PATTERN)(input)
 }
 
+/// Reads and discards as much whitespace as possible.
 pub fn opt_whitespace(input: &str) -> MResult<()> {
     map(take_while(|x: char| x.is_ascii_whitespace()), |_| ())(input)
 }
