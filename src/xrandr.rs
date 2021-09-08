@@ -2,6 +2,7 @@ use std::{collections::HashMap, convert::TryFrom};
 
 use anyhow::{anyhow, bail, Context, Result};
 use log::debug;
+use sha2::{Digest, Sha256};
 use x11rb::{
     protocol::{
         randr::{self, ConnectionExt, GetScreenResourcesReply, ModeFlag, ModeInfo},
@@ -59,6 +60,8 @@ pub struct ConnectedOutput {
     pub subpixel_order: SubPixel,
     /// An output may not have a preferred mode.
     pub edid: Option<Vec<u8>>,
+    /// A SHA-256 hash of the edid bytes.
+    pub edid_sha256: Option<String>,
     pub preferred_mode: Option<Mode>,
     /// Modes supported by this output. An output can only be connected to a
     /// CRTC if it supports the mode that is currently being used by the CRTC.
@@ -302,7 +305,10 @@ impl<'conn> Xrandr<'conn> {
             })
             .collect::<Result<_>>()?;
 
-        let edid = self.create_edid(id)?;
+        let (edid, edid_sha256) = match self.create_edid(id)? {
+            Some((e, s)) => (Some(e), Some(s)),
+            None => (None, None),
+        };
 
         Ok(Output::Connected(ConnectedOutput {
             id,
@@ -311,12 +317,13 @@ impl<'conn> Xrandr<'conn> {
             crtc,
             subpixel_order: reply.subpixel_order,
             edid,
+            edid_sha256,
             preferred_mode,
             supported_modes,
         }))
     }
 
-    fn create_edid(&self, id: randr::Output) -> Result<Option<Vec<u8>>> {
+    fn create_edid(&self, id: randr::Output) -> Result<Option<(Vec<u8>, String)>> {
         let properties = self.conn.randr_list_output_properties(id)?.reply()?;
         for atom in &properties.atoms {
             let name = String::from_utf8(
@@ -352,12 +359,20 @@ impl<'conn> Xrandr<'conn> {
                         EDID_LENGTH_BYTES
                     );
                 }
-                return Ok(Some(prop.data));
+                let hash = create_hash(&prop.data);
+                return Ok(Some((prop.data, hash)));
             }
         }
 
         Ok(None)
     }
+}
+
+fn create_hash(data: impl AsRef<[u8]>) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    let result = hasher.finalize();
+    base64::encode(result)
 }
 
 impl Dimensions {

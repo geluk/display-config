@@ -8,9 +8,14 @@ configurations:
 - name: lorentz-home-4k
   require_monitors:
   - alias: m0
-    match: width = 1920 and height = 1080
+    match: |
+      (width = 1920 and height = 1080)
+      and edid_hash = "ghYXklGPGstoFWggCSGOKafstilcSG6c5gk6NFn3YsI="
   - alias: m1
-    match: width = 3840 and height = 2160
+    match:
+    - width = 3840
+    - height = 2160
+    - edid_hash = "L9q3E42ZC2NyzkMhJ/9PxqEGvIKzyNbKWK7mpCokrYc="
   apply_commands:
   - 'echo hello from display-config - output of m0 is \"$m0_output\"'
   - 'echo hello from display-config - output of m1 is \"$m1_output\"'

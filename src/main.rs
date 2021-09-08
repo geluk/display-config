@@ -142,7 +142,11 @@ fn print_configuration(outputs: &[Output]) {
                     "({}mm × {}mm{})",
                     output.dimensions.mm_width, output.dimensions.mm_height, active
                 );
-                println!("Output {}: {} - xid {}", output.name, dimensions, output.id);
+                println!("Output {}: {}", output.name, dimensions);
+                match &output.edid_sha256 {
+                    Some(hash) => println!("    EDID hash: {}", hash),
+                    None => println!("    EDID hash: <unavailable>"),
+                }
 
                 for mode in &output.supported_modes {
                     let active = mode.is_active_on(output);
@@ -156,7 +160,7 @@ fn print_configuration(outputs: &[Output]) {
                     };
 
                     println!(
-                        "   Mode {}: {}×{} ({:.2}Hz){}",
+                        "    Mode {}: {}×{} ({:.2}Hz){}",
                         mode.id,
                         mode.resolution.width,
                         mode.resolution.height,
