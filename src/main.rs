@@ -9,22 +9,37 @@ mod parser;
 mod xorg;
 mod xrandr;
 
-use std::fs::File;
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::BufRead,
+    process::{Command, Stdio},
+};
 
-use anyhow::Result;
-use log::{debug, trace, warn};
+use anyhow::{anyhow, Result};
+use configuration::Setup;
+use log::{debug, info, trace, warn};
+use matcher::MatchedMonitor;
 
 use crate::{configuration::ConfigurationRoot, xrandr::Output, xrandr::Xrandr};
 
 fn main() -> Result<()> {
     let opt = opt::Opt::from_args();
+    let timestamp = match opt.log_timestamps {
+        true => stderrlog::Timestamp::Millisecond,
+        false => stderrlog::Timestamp::Off,
+    };
 
     stderrlog::new()
-        .timestamp(stderrlog::Timestamp::Microsecond)
+        .timestamp(timestamp)
         .show_level(false)
         .module(module_path!())
         .verbosity(1 + opt.verbose)
         .init()?;
+
+    if opt.dry_run {
+        eprintln!("Dry-run enabled: command execution will be simulated.");
+    }
 
     debug!("Opening configuration file");
     let file = File::open("config.yml")?;
@@ -45,18 +60,66 @@ fn main() -> Result<()> {
             )?;
 
             match matching_setup {
-                Some((_setup, monitors)) => {
-                    debug!("Found match");
-                    for monitor in monitors {
-                        debug!("    {} -> {}", monitor.alias, monitor.monitor.name)
-                    }
-                }
+                Some((setup, monitors)) => apply(setup, monitors, opt.dry_run)?,
                 None => warn!("No setup matches the current configuration"),
             }
         }
     }
 
     Ok(())
+}
+
+fn apply(setup: &Setup, monitors: Vec<MatchedMonitor>, dry_run: bool) -> Result<()> {
+    debug!("Found match");
+    let mut env = HashMap::new();
+    for monitor in monitors.iter() {
+        debug!("    {} -> {}", monitor.alias, monitor.monitor.name);
+        // env.push((&monitor.alias, &monitor.monitor.name));
+        env.insert(monitor.alias.clone(), &monitor.monitor.name);
+        env.insert(format!("{}_output", monitor.alias), &monitor.monitor.name);
+    }
+    if dry_run {
+        eprintln!("Environment variables available to commands: {:#?}", env);
+    } else {
+        debug!("Environment variables available to commands: {:#?}", env);
+    }
+
+    if dry_run {
+        for cmd in setup.apply_commands.iter() {
+            eprintln!("Execute: '{}'", cmd);
+        }
+        Ok(())
+    } else {
+        setup
+            .apply_commands
+            .iter()
+            .map(|c| execute_command(c, &env))
+            .collect()
+    }
+}
+
+fn execute_command(command: &String, environment: &HashMap<String, &String>) -> Result<()> {
+    debug!("Executing command: '{}'", command);
+    let cmd = Command::new("bash")
+        .args(&["-c", command])
+        .stderr(Stdio::piped())
+        .stdout(Stdio::piped())
+        .envs(environment)
+        .output()?;
+
+    for line in cmd.stdout.lines() {
+        let line = line?;
+        info!("O> {}", line);
+    }
+    for line in cmd.stderr.lines() {
+        let line = line?;
+        info!("E> {}", line);
+    }
+
+    match cmd.status.success() {
+        true => Ok(()),
+        false => Err(anyhow!("Command exited with nonzero status")),
+    }
 }
 
 fn print_configuration(outputs: &[Output]) {

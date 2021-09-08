@@ -13,10 +13,20 @@ pub struct Opt {
     #[structopt(
         short,
         long,
+        help = "Do not execute any commands, only print what would be done"
+    )]
+    pub dry_run: bool,
+
+    #[structopt(
+        short,
+        long,
         parse(from_occurrences),
         help = "Set log verbosity, repeat multiple times to raise"
     )]
     pub verbose: usize,
+
+    #[structopt(long, help = "Include timestamps in log output")]
+    pub log_timestamps: bool,
 }
 
 impl Opt {

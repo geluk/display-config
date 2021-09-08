@@ -16,6 +16,8 @@ pub struct ConfigurationRoot {
 pub struct Setup {
     pub name: String,
     pub require_monitors: Vec<RequiredMonitor>,
+    #[serde(default)]
+    pub apply_commands: Vec<String>,
 }
 
 /// Matches a single monitor.
