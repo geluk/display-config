@@ -77,21 +77,26 @@ fn match_rule(tokens: Vec<Token>) -> Result<Expr> {
     Ok(expr)
 }
 
+// Thanks to Aleksey Kladov for his clear breakdown of Pratt's algorithm.
+// The implementation in this function mostly follows his example.
+// https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
 fn expr(tokens: &[Token], prev_p: u8) -> PResult<Expr> {
     // We're beginning a new (sub)expression. Let's start by trying to build
-    // an atomic expression out of the first token.
+    // an atomic expression out of the first token we encounter.
     let (mut tokens, token) = next(tokens)?;
     let mut lhs = match token {
         // These are easy enough.
-        Token::Literal(lit) => Expr::Literal(*lit),
+        Token::Literal(lit) => Expr::Literal(lit.clone()),
         Token::Ident(ident) => Expr::Ident(ident.clone()),
         // We've encountered an operator right at the start,
         // try to treat it as unary.
         Token::Op(op) => {
-            // Calculate its binding power...
+            // Look up the unary binding power of this operator.
+            // If the lookup fails, the operator cannot be used in unary
+            // position, and we'll bail.
             let rp = get_unop_power(*op)?;
             let rhs;
-            // ...build an expression from anything that comes after it...
+            // Build an expression from anything that comes after it...
             (tokens, rhs) = expr(tokens, rp)?;
             // ...and construct a unary expression from the operator and the
             // expression we just parsed.
