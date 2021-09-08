@@ -34,7 +34,6 @@ impl Evaluator {
 
     fn evaluate_expr(&self, expr: &Expr) -> Result<Value> {
         match expr {
-            Expr::Nested(inner) => self.evaluate_expr(inner),
             Expr::Binary(op) => self.evaluate_binary(op),
             Expr::Unary(un) => self.evaluate_unary(un),
             Expr::Literal(lit) => self.evaluate_literal(*lit),
@@ -84,15 +83,15 @@ impl Evaluator {
     fn evaluate_literal(&self, lit: Literal) -> Result<Value> {
         match lit {
             Literal::Number(num) => Ok(Value::Number(num)),
+            Literal::Bool(b) => Ok(Value::Bool(b)),
         }
     }
 
     fn evaluate_ident(&self, id: String) -> Result<Value> {
-        Ok(self
-            .variables
+        self.variables
             .get::<str>(&id)
             .copied()
-            .ok_or_else(|| anyhow!("Unknown variable: '{}'", id))?)
+            .ok_or_else(|| anyhow!("Unknown variable: '{}'", id))
     }
 }
 

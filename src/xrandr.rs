@@ -1,6 +1,7 @@
 use std::{collections::HashMap, convert::TryFrom};
 
 use anyhow::{anyhow, bail, Context, Result};
+use log::debug;
 use x11rb::{
     protocol::{
         randr::{self, ConnectionExt, GetScreenResourcesReply, ModeFlag, ModeInfo},
@@ -148,6 +149,7 @@ impl<'conn> Xrandr<'conn> {
     }
 
     pub fn get_all_outputs(&self) -> Result<Vec<Output>> {
+        debug!("Querying outputs");
         let resources = self.get_screen_resources()?;
 
         let modes = resources
@@ -271,11 +273,7 @@ impl<'conn> Xrandr<'conn> {
             xid => Some(
                 crtcs
                     .get(xid)
-                    .ok_or(anyhow!(
-                        "Could not find CRTC {} for output {}",
-                        reply.crtc,
-                        id
-                    ))?
+                    .ok_or_else(|| anyhow!("Could not find CRTC {} for output {}", reply.crtc, id))?
                     .clone(),
             ),
         };

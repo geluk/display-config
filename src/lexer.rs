@@ -5,10 +5,10 @@ use log::trace;
 use nom::{
     branch::*,
     bytes::complete::*,
-    character::{self, complete::satisfy},
+    character,
     combinator::{all_consuming, map, map_parser},
     error::{context, convert_error, ErrorKind, ParseError, VerboseError},
-    multi::{many0, many1},
+    multi::many0,
     sequence::terminated,
     Err, Finish, IResult, Parser,
 };
@@ -41,12 +41,14 @@ impl Display for Token {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Literal {
     Number(u32),
+    Bool(bool),
     // TODO: add string and others
 }
 impl Display for Literal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Literal::Number(n) => write!(f, "{}", n),
+            Literal::Bool(b) => write!(f, "{}", b),
         }
     }
 }
@@ -85,8 +87,8 @@ impl Display for Op {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Sep {
-    LBrace,
-    RBrace,
+    LParen,
+    RParen,
 }
 impl Display for Sep {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -94,8 +96,8 @@ impl Display for Sep {
             f,
             "{}",
             match self {
-                Sep::LBrace => "(",
-                Sep::RBrace => ")",
+                Sep::LParen => "(",
+                Sep::RParen => ")",
             }
         )
     }
@@ -105,7 +107,7 @@ pub fn lex(input: &str) -> Result<Vec<Token>> {
     let result = token_stream(input).finish();
     match result {
         Ok((_, tokens)) => {
-            trace!("Rule token stream parsed to: {:?}", tokens);
+            trace!("Rule token stream is: {:?}", tokens);
             Ok(tokens)
         }
         Err(error) => Err(anyhow!(convert_error(input, error))),
@@ -118,7 +120,7 @@ pub fn token_stream(input: &str) -> MResult<Vec<Token>> {
     // Now read as many tokens as possible
     let (input, tokens) = many0(token_and_whitespace)(input)?;
 
-    if input != "" {
+    if !input.is_empty() {
         // Token reading stopped, but we still have input left over.
         // This means we've encountered an invalid token. Report it.
         Err(Err::Failure(VerboseError::from_error_kind(
@@ -148,12 +150,16 @@ pub fn variable(input: &str) -> MResult<String> {
 }
 
 pub fn literal(input: &str) -> MResult<Literal> {
-    map(character::complete::u32, Literal::Number)(input)
+    let number = map(character::complete::u32, Literal::Number);
+    let b_true = keyword(tag("true"), Literal::Bool(true));
+    let b_false = keyword(tag("false"), Literal::Bool(false));
+
+    alt((number, b_true, b_false))(input)
 }
 
 pub fn separator(input: &str) -> MResult<Sep> {
-    let lbrace = map_token("(", Sep::LBrace);
-    let rbrace = map_token(")", Sep::RBrace);
+    let lbrace = map_token("(", Sep::LParen);
+    let rbrace = map_token(")", Sep::RParen);
 
     alt((lbrace, rbrace))(input)
 }
@@ -198,10 +204,6 @@ pub fn opt_whitespace(input: &str) -> MResult<()> {
     map(take_while(|x: char| x.is_ascii_whitespace()), |_| ())(input)
 }
 
-pub fn mnd_whitespace(input: &str) -> MResult<()> {
-    map(many1(satisfy(|x| x.is_ascii_whitespace())), |_| ())(input)
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -230,12 +232,12 @@ mod test {
                 Token::Op(Op::Gt),
                 Token::Literal(Literal::Number(4)),
                 Token::Op(Op::And),
-                Token::Sep(Sep::LBrace),
+                Token::Sep(Sep::LParen),
                 Token::Op(Op::Not),
                 ident("test"),
                 Token::Op(Op::Eq),
                 ident("andy"),
-                Token::Sep(Sep::RBrace),
+                Token::Sep(Sep::RParen),
             ]
         );
     }
@@ -389,21 +391,5 @@ mod test {
         let value = "   >=";
         let (output, _) = opt_whitespace(value).unwrap();
         assert_eq!(output, ">=");
-    }
-
-    // mnd-whitespace tests
-    // --------------------
-    #[test]
-    fn mnd_whitespace_takes_all() {
-        let value = "   yes";
-        let (output, _) = mnd_whitespace(value).unwrap();
-        assert_eq!(output, "yes");
-    }
-
-    #[test]
-    fn mnd_whitespace_no_whitespace_given_fails() {
-        let value = "yes";
-        let res = mnd_whitespace(value);
-        assert!(res.is_err());
     }
 }

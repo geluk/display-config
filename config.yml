@@ -9,7 +9,7 @@ configurations:
   require_monitors:
   - alias: m0
     output: DVI-I-1
-    match: width = 1920 and height = 1080
+    match: widthe = 1920 and height = 1080
   - alias: m1
     output: DP-4
     match:

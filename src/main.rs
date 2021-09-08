@@ -12,7 +12,7 @@ mod xrandr;
 use std::fs::File;
 
 use anyhow::Result;
-use log::{debug, warn};
+use log::{debug, trace, warn};
 
 use crate::{configuration::ConfigurationRoot, xrandr::Output, xrandr::Xrandr};
 
@@ -20,15 +20,18 @@ fn main() -> Result<()> {
     let opt = opt::Opt::from_args();
 
     stderrlog::new()
+        .timestamp(stderrlog::Timestamp::Microsecond)
         .show_level(false)
         .module(module_path!())
         .verbosity(1 + opt.verbose)
         .init()?;
 
+    debug!("Opening configuration file");
     let file = File::open("config.yml")?;
+    trace!("Reading configuration");
     let config_root: ConfigurationRoot = serde_yaml::from_reader(file)?;
+    trace!("Connecting to X11");
     let connection = xorg::connect()?;
-
     let randr = Xrandr::new(&connection);
 
     match opt.operation {

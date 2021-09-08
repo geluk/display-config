@@ -1,5 +1,6 @@
 use structopt::{clap::arg_enum, StructOpt};
 
+/// Commandline options for the application.
 #[derive(Debug, StructOpt)]
 #[structopt(
     name = "display-config",
