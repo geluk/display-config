@@ -27,16 +27,18 @@ configurations:
         # The following rule matches all monitors with a maximum supported
         # refresh rate of 120Hz.
         match: refresh_rate = 120
-      - alias: m2
     # If all required monitors have been found, the following commands will be
     # executed.
     apply_commands:
+      # You can add as many commands as you like.
+      # They will be executed sequentially.
       - echo hello from display-config!
       - echo Setup 'example' was matched against your current monitors.
       # Inside your commands, several environment variables have been set.
-      # This lets you configure 
       - echo your first monitor is connected to $M0_OUTPUT
-      - echo your second monitor is connected to $M1_OUTPUT
+      # Commands are evaluated inside bash, so any valid shell script can be
+      # used here.
+      - '[ $M1_IS_ACTIVE ] && echo your second monitor is already active'
 
     # Another setup. If one or more of the required_monitors defined in the
     # previous setup are not present, this setup will be checked next.
