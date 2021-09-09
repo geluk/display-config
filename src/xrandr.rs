@@ -24,20 +24,7 @@ pub type RefreshRate = f32;
 /// Flags indicating the rotation/reflection of a CRTC
 pub type Rotation = u16;
 
-pub struct Xrandr<'conn> {
-    conn: &'conn RustConnection,
-    root_wnd: Window,
-}
-
-#[derive(Debug, Clone)]
-pub struct Crtc {
-    id: Xid,
-    dimensions: Rectangle,
-    mode: Option<Mode>,
-    rotation: Rotation,
-    rotations: Rotation,
-}
-
+/// Represents the states an Xrandr output may be in.
 #[derive(Debug, Clone)]
 pub enum Output {
     Connected(ConnectedOutput),
@@ -67,7 +54,6 @@ pub struct ConnectedOutput {
     /// CRTC if it supports the mode that is currently being used by the CRTC.
     pub supported_modes: Vec<Mode>,
 }
-
 impl ConnectedOutput {
     /// Returns whether the output is currently bound to a CRTC.
     pub fn is_active(&self) -> bool {
@@ -75,33 +61,8 @@ impl ConnectedOutput {
     }
 }
 
-/// An output that is either disconnected or in an unknown state.
-#[derive(Debug, Clone)]
-pub struct UnknownOutput {
-    pub id: Xid,
-    pub name: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct Dimensions {
-    pub mm_width: u32,
-    pub mm_height: u32,
-}
-
-#[derive(Debug, Clone)]
-pub struct Resolution {
-    pub width: u16,
-    pub height: u16,
-}
-
-#[derive(Debug, Clone)]
-pub struct Rectangle {
-    pub x: i16,
-    pub y: i16,
-    pub width: u16,
-    pub height: u16,
-}
-
+/// A display mode, encoding information about the resolution and sync rates of
+/// an ouput.
 #[derive(Debug, Clone)]
 pub struct Mode {
     pub id: Xid,
@@ -110,7 +71,6 @@ pub struct Mode {
     pub hsync: Option<RefreshRate>,
     flags: ModeFlag,
 }
-
 impl Mode {
     pub fn is_active_on(&self, output: &ConnectedOutput) -> bool {
         output
@@ -124,7 +84,6 @@ impl Mode {
         output.preferred_mode.as_ref().map_or(false, |m| m == self)
     }
 }
-
 impl Eq for Mode {}
 impl PartialEq for Mode {
     fn eq(&self, other: &Self) -> bool {
@@ -132,6 +91,75 @@ impl PartialEq for Mode {
     }
 }
 
+/// An output that is either disconnected or in an unknown state.
+#[derive(Debug, Clone)]
+pub struct UnknownOutput {
+    pub id: Xid,
+    pub name: String,
+}
+
+/// A rectangle on the screen, which is directly visible on or more outputs.
+/// A CRTC defines a mode, which all connected outputs must support.
+#[derive(Debug, Clone)]
+pub struct Crtc {
+    id: Xid,
+    dimensions: Rectangle,
+    mode: Option<Mode>,
+    rotation: Rotation,
+    rotations: Rotation,
+}
+
+/// Physical dimensions, in millimetres.
+#[derive(Debug, Clone)]
+pub struct Dimensions {
+    pub mm_width: u32,
+    pub mm_height: u32,
+}
+impl Dimensions {
+    fn new(mm_width: u32, mm_height: u32) -> Self {
+        Self {
+            mm_width,
+            mm_height,
+        }
+    }
+}
+
+/// Resolution in pixels.
+#[derive(Debug, Clone)]
+pub struct Resolution {
+    pub width: u16,
+    pub height: u16,
+}
+impl Resolution {
+    fn new(width: u16, height: u16) -> Self {
+        Self { width, height }
+    }
+}
+
+/// A rectangle, defined by its position, width, and height, in pixels.
+#[derive(Debug, Clone)]
+pub struct Rectangle {
+    pub x: i16,
+    pub y: i16,
+    pub width: u16,
+    pub height: u16,
+}
+impl Rectangle {
+    fn new(x: i16, y: i16, width: u16, height: u16) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+}
+
+/// Xrandr wrapper for fetching monitor settings.
+pub struct Xrandr<'conn> {
+    conn: &'conn RustConnection,
+    root_wnd: Window,
+}
 impl<'conn> Xrandr<'conn> {
     pub fn new(wrapper: &'conn X11Wrapper) -> Self {
         Self {
@@ -368,33 +396,10 @@ impl<'conn> Xrandr<'conn> {
     }
 }
 
+/// Convenience function for creating a base64-encoded SHA256 hash.
 fn create_hash(data: impl AsRef<[u8]>) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
     let result = hasher.finalize();
     base64::encode(result)
-}
-
-impl Dimensions {
-    fn new(mm_width: u32, mm_height: u32) -> Self {
-        Self {
-            mm_width,
-            mm_height,
-        }
-    }
-}
-impl Resolution {
-    fn new(width: u16, height: u16) -> Self {
-        Self { width, height }
-    }
-}
-impl Rectangle {
-    fn new(x: i16, y: i16, width: u16, height: u16) -> Self {
-        Self {
-            x,
-            y,
-            width,
-            height,
-        }
-    }
 }
