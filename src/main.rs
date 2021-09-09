@@ -67,7 +67,7 @@ fn entry() -> Result<()> {
             )?;
 
             match matching_setup {
-                Some((setup, monitors)) => apply(setup, monitors, opt.dry_run),
+                Some((setup, monitors)) => apply(setup, monitors, opt.dry_run)?,
                 None => {
                     bail!("No setup matches the current configuration")
                 }
@@ -78,14 +78,18 @@ fn entry() -> Result<()> {
     Ok(())
 }
 
-fn apply(setup: &Setup, monitors: Vec<MatchedMonitor>, dry_run: bool) {
+fn apply(setup: &Setup, monitors: Vec<MatchedMonitor>, dry_run: bool) -> Result<()> {
     info!("Applying setup: '{}'", setup.name);
     let mut env = HashMap::new();
     for monitor in monitors.iter() {
-        debug!("    {} -> {}", monitor.alias, monitor.monitor.name);
-        // env.push((&monitor.alias, &monitor.monitor.name));
-        env.insert(monitor.alias.clone(), &monitor.monitor.name);
-        env.insert(format!("{}_output", monitor.alias), &monitor.monitor.name);
+        debug!("  {} = {}", monitor.alias, monitor.monitor.name);
+        let vars = matcher::generate_variables(&monitor.monitor)?;
+        for (key, value) in vars {
+            let key = format!("{}_{}", monitor.alias, key).to_uppercase();
+            let value = value.fmt_bash();
+            debug!("    {} = {}", key, value);
+            env.insert(key, value);
+        }
     }
     if dry_run {
         eprintln!("Environment variables available to commands: {:#?}", env);
@@ -107,9 +111,10 @@ fn apply(setup: &Setup, monitors: Vec<MatchedMonitor>, dry_run: bool) {
             error!("Unable to apply '{}': {}", setup.name, err);
         }
     }
+    Ok(())
 }
 
-fn execute_command(command: &str, environment: &HashMap<String, &String>) -> Result<()> {
+fn execute_command(command: &str, environment: &HashMap<String, String>) -> Result<()> {
     debug!("Executing command: '{}'", command);
     let cmd = Command::new("bash")
         .args(&["-c", command])
@@ -165,10 +170,11 @@ fn print_connected_output(output: ConnectedOutput) -> Result<()> {
         print_mode(mode, &output);
     }
 
-    println!("  To match this output, try one of these variables: ");
+    println!("  To match this output, try using one or more of these variables: ");
     let vars = matcher::generate_variables(&output)?;
+    let align_width = vars.iter().map(|(k, _)| k.len()).max().unwrap_or_default();
     for (key, value) in vars.into_iter() {
-        println!("    - {:10}= {}", key, value);
+        println!("    * {:2$} = {}", key, value, align_width);
     }
 
     Ok(())
@@ -186,8 +192,7 @@ fn print_mode(mode: &Mode, output: &ConnectedOutput) {
     };
 
     println!(
-        "    Mode {}: {}×{} ({:.2}Hz){}",
-        mode.id,
+        "    * {}×{} ({:.2}Hz){}",
         mode.resolution.width,
         mode.resolution.height,
         mode.refresh_rate.unwrap(),

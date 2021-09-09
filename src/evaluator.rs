@@ -29,6 +29,16 @@ impl Value {
         }
     }
 }
+impl Value {
+    pub fn fmt_bash(&self) -> String {
+        match self {
+            Value::Number(v) => format!("{}", v),
+            Value::Bool(true) => format!("1"),
+            Value::Bool(false) => format!("0"),
+            Value::String(v) => format!("{}", v),
+        }
+    }
+}
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

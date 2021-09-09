@@ -72,14 +72,7 @@ fn match_setup_monitor(
         }
         _ => {
             error!("Multiple matches for ${}", mon_match.alias);
-            Err(anyhow!(
-                "Multiple matches for '{}': {:?}",
-                mon_match.alias,
-                matching_monitors
-                    .iter()
-                    .map(|m| &m.name)
-                    .collect::<Vec<_>>()
-            ))
+            Ok(None)
         }
     }
 }
@@ -125,13 +118,21 @@ pub fn generate_variables(output: &ConnectedOutput) -> Result<Vec<(&'static str,
         .cloned()
         .unwrap_or_else(|| "".to_string());
 
-    Ok(vec![
+    let mut variables = vec![
         ("width", Value::Number(width)),
         ("height", Value::Number(height)),
         ("mm_width", Value::Number(mm_width)),
         ("mm_height", Value::Number(mm_height)),
         ("edid_hash", Value::String(edid_hash)),
         ("output", Value::String(output.name.clone())),
+        ("is_active", Value::Bool(output.is_active())),
         ("xid", Value::Number(output.id)),
-    ])
+    ];
+    // TODO: put this back when we have float support
+    if let Some(rate) = mode.refresh_rate {
+        let rate = rate.round() as u32;
+        variables.push(("refresh_rate", Value::Number(rate)));
+    }
+
+    Ok(variables)
 }
