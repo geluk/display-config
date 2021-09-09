@@ -1,0 +1,71 @@
+# Define your setups in here. Each setup will be evaluated in order.
+# As soon as a matching setup is found, no more setups will be evaluated,
+# and the apply_commands for the matched setup are executed.
+configurations:
+    # A friendly name for this setup, for your own reference.
+  - name: example
+    # This setup will be applied if all monitors defined in here are present.
+    require_monitors:
+        # Define an alias for the monitor here. This alias can then be used to
+        # refer to this monitor when running commands.
+      - alias: m0
+        # To determine which physical monitors are considered acceptable,
+        # you can define a list of match rules here. All rules need to be true
+        # in order for a monitor to be considered a match.
+        # Note that matching against multiple monitors is not yet supported.
+        # If multiple monitors match this rule, it will be rejected.
+        match:
+          # The width of the maximum supported resolution of this monitor must
+          # be exactly 1920 pixels...
+          - width = 1920
+          # ...and the height must be at least 1080 pixels. These two rules
+          # taken together will match a 1920×1080 monitor, a 1920×1200 monitor,
+          # but not a 2560×1440 monitor or a 1280×1024 monitor.
+          - height >= 1080
+      - alias: m1
+        # If you only have a single match rule, you don't need to use a list.
+        # The following rule matches all monitors with a maximum supported
+        # refresh rate of 120Hz.
+        match: refresh_rate = 120
+      - alias: m2
+    # If all required monitors have been found, the following commands will be
+    # executed.
+    apply_commands:
+      - echo hello from display-config!
+      - echo Setup 'example' was matched against your current monitors.
+      # Inside your commands, several environment variables have been set.
+      # This lets you configure 
+      - echo your first monitor is connected to $M0_OUTPUT
+      - echo your second monitor is connected to $M1_OUTPUT
+
+    # Another setup. If one or more of the required_monitors defined in the
+    # previous setup are not present, this setup will be checked next.
+  - name: example-two
+    require_monitors:
+        # TODO: validate alias naming to be shell variable-safe.
+      - alias: m_primary
+        # More complex match rules can be written by using 'or', 'and',
+        # and parentheses. You can use a YAML multiline string to format them
+        # nicely (add a '|' and start the string indented on the next line).
+        match: |
+          edid_hash = "ghYXklGPGstoFWggCSGOKafstilcSG6c5gk6NFn3YsI="
+          or (width = 1920 and height = 1080)
+          or output = "DVI-I-1"
+      - alias: m_secondary
+        match:
+          - width > 1920
+          - height > 1080
+    apply_commands:
+        # Multiline strings can also be used to create longer commands.
+      - |
+        echo hello from display-config!
+        echo your primary monitor resolution is \
+        ${M_PRIMARY_WIDTH}×${M_PRIMARY_HEIGHT}:${M_PRIMARY_REFRESH_RATE}Hz
+        echo your secondary monitor is connected to $M_SECONDARY_OUTPUT
+    # - if: $m0.width > 1920
+    #   run:
+    #   - echo hi
+
+    # - width = 1920 and height = 1080
+    # - preferred_mode = 1920x1080:60
+    # - not modes has 1920x1080
