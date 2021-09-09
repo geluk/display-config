@@ -10,6 +10,9 @@ pub struct Opt {
     #[structopt(possible_values = &Operation::variants(), case_insensitive = true, help = "Which action to perform")]
     pub operation: Operation,
 
+    #[structopt(short, long)]
+    pub config_file: Option<String>,
+
     #[structopt(
         short,
         long,

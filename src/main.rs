@@ -11,7 +11,6 @@ mod xrandr;
 
 use std::{
     collections::HashMap,
-    fs::File,
     io::BufRead,
     process::{Command, Stdio},
 };
@@ -21,9 +20,19 @@ use configuration::Setup;
 use log::{debug, error, info, trace};
 use matcher::MatchedMonitor;
 
-use crate::{configuration::ConfigurationRoot, xrandr::Output, xrandr::Xrandr};
+use crate::{xrandr::Output, xrandr::Xrandr};
 
-fn main() -> Result<()> {
+fn main() {
+    if let Err(error) = entry() {
+        error!("Error: {}\n", error);
+        error!("Caused by: ");
+        for (number, cause) in error.chain().enumerate().skip(1) {
+            error!("  {}: {}", number, cause);
+        }
+    }
+}
+
+fn entry() -> Result<()> {
     let opt = opt::Opt::from_args();
     let timestamp = match opt.log_timestamps {
         true => stderrlog::Timestamp::Millisecond,
@@ -41,10 +50,6 @@ fn main() -> Result<()> {
         eprintln!("Dry-run enabled: command execution will be simulated.");
     }
 
-    debug!("Opening configuration file");
-    let file = File::open("config.yml")?;
-    trace!("Reading configuration");
-    let config_root: ConfigurationRoot = serde_yaml::from_reader(file)?;
     trace!("Connecting to X11");
     let connection = xorg::connect()?;
     let randr = Xrandr::new(&connection);
@@ -54,6 +59,7 @@ fn main() -> Result<()> {
             print_configuration(&randr.get_all_outputs()?);
         }
         opt::Operation::Apply => {
+            let config_root = configuration::read(opt.config_file)?;
             let matching_setup = matcher::find_matching_setup(
                 &randr.get_connected_outputs()?,
                 &config_root.configurations,

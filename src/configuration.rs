@@ -1,9 +1,20 @@
+use std::{
+    env::{self, VarError},
+    fs::{self, File},
+    path::PathBuf,
+};
+
+use anyhow::{bail, Context, Result};
+use log::{debug, trace};
 use serde::{
     de::{self, Visitor},
     Deserialize,
 };
 
 use crate::parser::{self, MatchRule};
+
+const CONFIG_DIR: &str = "display-config";
+const CONFIG_FILE: &str = "config.yml";
 
 /// The root of the configuration file.
 #[derive(Debug, Deserialize)]
@@ -73,6 +84,54 @@ impl<'de> Visitor<'de> for MatchRuleVisitor {
         }
         Ok(items)
     }
+}
+
+pub fn read(config_path: Option<String>) -> Result<ConfigurationRoot> {
+    let config_path = config_path
+        .map(PathBuf::from)
+        .ok_or(())
+        .or_else(|_| default_config_path())
+        .context("Could not determine default configuration file path")?;
+
+    if !config_path.exists() {
+        bail!(
+            "No configuration file found. Please create one at {:?}",
+            config_path
+        );
+    }
+
+    debug!("Opening configuration file: {:?}", config_path);
+    let file = File::open(config_path)?;
+    trace!("Reading configuration");
+    let config_root: ConfigurationRoot = serde_yaml::from_reader(file)?;
+
+    Ok(config_root)
+}
+
+fn default_config_path() -> Result<PathBuf> {
+    let home = dirs::home_dir();
+    let mut config_dir = match (env::var("XDG_CONFIG_HOME"), home) {
+        (Ok(path), _) => PathBuf::from(path),
+        (Err(VarError::NotPresent), Some(mut home)) => {
+            home.push(".config");
+            home
+        }
+        (Err(VarError::NotPresent), None) => {
+            bail!("XDG_CONFIG_HOME not set and home directory unknown")
+        }
+        (Err(VarError::NotUnicode(_)), _) => bail!("XDG_CONFIG_HOME contains non-unicode data"),
+    };
+    config_dir.push(CONFIG_DIR);
+
+    if !config_dir.exists() {
+        fs::create_dir(&config_dir).context(format!(
+            "Unable to create configuration directory: {:?}",
+            config_dir
+        ))?;
+    }
+
+    config_dir.push(CONFIG_FILE);
+    Ok(config_dir)
 }
 
 #[cfg(test)]
