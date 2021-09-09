@@ -97,10 +97,7 @@ fn apply(setup: &Setup, monitors: Vec<MatchedMonitor>, dry_run: bool) {
             .try_for_each(|c| execute_command(c, &env));
 
         if let Err(err) = result {
-            error!(
-                "Unable to apply '{}': a command exited with a nonzero status.",
-                setup.name
-            );
+            error!("Unable to apply '{}': {}", setup.name, err);
         }
     }
 }
