@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use anyhow::{anyhow, bail, Result};
 
@@ -9,23 +9,32 @@ use crate::{
 
 pub type Variables = HashMap<&'static str, Value>;
 
+#[derive(Debug)]
 pub struct Evaluator {
     variables: Variables,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Value {
     Number(Number),
     Bool(bool),
     String(String),
 }
-
 impl Value {
     fn type_name(&self) -> &'static str {
         match self {
             Value::Number(_) => "number",
             Value::Bool(_) => "boolean",
             Value::String(_) => "string",
+        }
+    }
+}
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Number(v) => write!(f, "{}", v),
+            Value::Bool(v) => write!(f, "{}", v),
+            Value::String(v) => write!(f, "\"{}\"", v),
         }
     }
 }

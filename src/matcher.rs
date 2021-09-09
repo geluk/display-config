@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use anyhow::{anyhow, Result};
 use log::{debug, error, trace};
 
@@ -94,42 +92,7 @@ fn match_single_monitor(mon_match: &RequiredMonitor, mon_info: &ConnectedOutput)
         mon_match.alias
     );
 
-    if let Some(name) = &mon_match.output {
-        if name == &mon_info.name {
-            trace!("    [v] Name matches");
-        } else {
-            trace!(
-                "    [×] Name does not match ('{}' != '{}')",
-                mon_info.name,
-                mon_match.output.as_ref().unwrap()
-            );
-            return Ok(false);
-        }
-    }
-
-    if let Some(output) = &mon_match.output {
-        let m = mon_info.name == *output;
-        if !m {
-            return Ok(false);
-        }
-    }
-
-    let mode = mon_info
-        .preferred_mode
-        .as_ref()
-        .ok_or_else(|| anyhow!("Output '{}' has no preferred mode", mon_info.name))?;
-    let width = mode.resolution.width as u32;
-    let height = mode.resolution.height as u32;
-    let edid_hash = mon_info
-        .edid_sha256
-        .as_ref()
-        .cloned()
-        .unwrap_or_else(|| "".to_string());
-    let variables = HashMap::from([
-        ("width", Value::Number(width)),
-        ("height", Value::Number(height)),
-        ("edid_hash", Value::String(edid_hash)),
-    ]);
+    let variables = generate_variables(mon_info)?.into_iter().collect();
     let evl = evaluator::Evaluator::new(variables);
 
     for rule in &mon_match.r#match {
@@ -143,4 +106,32 @@ fn match_single_monitor(mon_match: &RequiredMonitor, mon_info: &ConnectedOutput)
 
     trace!("    Match found");
     Ok(true)
+}
+
+pub fn generate_variables(output: &ConnectedOutput) -> Result<Vec<(&'static str, Value)>> {
+    let mode = output
+        .preferred_mode
+        .as_ref()
+        .ok_or_else(|| anyhow!("Output '{}' has no preferred mode", output.name))?;
+    let width = mode.resolution.width as u32;
+    let height = mode.resolution.height as u32;
+
+    let mm_width = output.dimensions.mm_width;
+    let mm_height = output.dimensions.mm_height;
+
+    let edid_hash = output
+        .edid_sha256
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| "".to_string());
+
+    Ok(vec![
+        ("width", Value::Number(width)),
+        ("height", Value::Number(height)),
+        ("mm_width", Value::Number(mm_width)),
+        ("mm_height", Value::Number(mm_height)),
+        ("edid_hash", Value::String(edid_hash)),
+        ("output", Value::String(output.name.clone())),
+        ("xid", Value::Number(output.id)),
+    ])
 }

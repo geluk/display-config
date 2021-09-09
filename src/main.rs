@@ -19,6 +19,7 @@ use anyhow::{anyhow, bail, Result};
 use configuration::Setup;
 use log::{debug, error, info, trace};
 use matcher::MatchedMonitor;
+use xrandr::{ConnectedOutput, Mode};
 
 use crate::{xrandr::Output, xrandr::Xrandr};
 
@@ -56,7 +57,7 @@ fn entry() -> Result<()> {
 
     match opt.operation {
         opt::Operation::Print => {
-            print_configuration(&randr.get_all_outputs()?);
+            print_configuration(randr.get_all_outputs()?)?;
         }
         opt::Operation::Apply => {
             let config_root = configuration::read(opt.config_file)?;
@@ -132,52 +133,64 @@ fn execute_command(command: &str, environment: &HashMap<String, &String>) -> Res
     }
 }
 
-fn print_configuration(outputs: &[Output]) {
+fn print_configuration(outputs: Vec<Output>) -> Result<()> {
     for state in outputs {
         match state {
             Output::Disconnected(output) => {
-                println!("Output {}: (disconnected) - xid {}", output.name, output.id);
+                println!("Output {}: (disconnected)", output.name)
             }
             Output::Unknown(output) => {
-                println!("Output {}: (unknown) - xid {}", output.name, output.id);
+                println!("Output {}: (unknown)", output.name)
             }
-            Output::Connected(output) => {
-                let active = match output.is_active() {
-                    true => ", active",
-                    false => ", inactive",
-                };
-
-                let dimensions = format!(
-                    "({}mm × {}mm{})",
-                    output.dimensions.mm_width, output.dimensions.mm_height, active
-                );
-                println!("Output {}: {}", output.name, dimensions);
-                match &output.edid_sha256 {
-                    Some(hash) => println!("    EDID hash: {}", hash),
-                    None => println!("    EDID hash: <unavailable>"),
-                }
-
-                for mode in &output.supported_modes {
-                    let active = mode.is_active_on(output);
-                    let pref = mode.is_preferred_by(output);
-
-                    let actpref = match (active, pref) {
-                        (true, true) => " (active, preferred)",
-                        (true, false) => " (active)",
-                        (false, true) => " (preferred)",
-                        (false, false) => "",
-                    };
-
-                    println!(
-                        "    Mode {}: {}×{} ({:.2}Hz){}",
-                        mode.id,
-                        mode.resolution.width,
-                        mode.resolution.height,
-                        mode.refresh_rate.unwrap(),
-                        actpref,
-                    )
-                }
-            }
+            Output::Connected(output) => print_connected_output(output)?,
         }
     }
+    Ok(())
+}
+
+fn print_connected_output(output: ConnectedOutput) -> Result<()> {
+    let active = match output.is_active() {
+        true => ", active",
+        false => ", inactive",
+    };
+
+    let dimensions = format!(
+        "({}mm × {}mm{})",
+        output.dimensions.mm_width, output.dimensions.mm_height, active
+    );
+    println!("Output {}: {}", output.name, dimensions);
+
+    println!("  Supported modes: ");
+    for mode in &output.supported_modes {
+        print_mode(mode, &output);
+    }
+
+    println!("  To match this output, try one of these variables: ");
+    let vars = matcher::generate_variables(&output)?;
+    for (key, value) in vars.into_iter() {
+        println!("    - {:10}= {}", key, value);
+    }
+
+    Ok(())
+}
+
+fn print_mode(mode: &Mode, output: &ConnectedOutput) {
+    let active = mode.is_active_on(output);
+    let pref = mode.is_preferred_by(output);
+
+    let actpref = match (active, pref) {
+        (true, true) => " (active, preferred)",
+        (true, false) => " (active)",
+        (false, true) => " (preferred)",
+        (false, false) => "",
+    };
+
+    println!(
+        "    Mode {}: {}×{} ({:.2}Hz){}",
+        mode.id,
+        mode.resolution.width,
+        mode.resolution.height,
+        mode.refresh_rate.unwrap(),
+        actpref,
+    )
 }

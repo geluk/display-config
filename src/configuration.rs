@@ -34,8 +34,6 @@ pub struct Setup {
 /// Matches a single monitor.
 #[derive(Debug, Deserialize)]
 pub struct RequiredMonitor {
-    /// The name of the output to which the monitor is connected, as reported by xrandr.
-    pub output: Option<String>,
     #[serde(deserialize_with = "match_rules", default)]
     pub r#match: Vec<MatchRule>,
     pub alias: String,
