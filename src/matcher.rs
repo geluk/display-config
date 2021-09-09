@@ -124,7 +124,7 @@ fn match_single_monitor(mon_match: &RequiredMonitor, mon_info: &ConnectedOutput)
         .edid_sha256
         .as_ref()
         .cloned()
-        .unwrap_or("".to_string());
+        .unwrap_or_else(|| "".to_string());
     let variables = HashMap::from([
         ("width", Value::Number(width)),
         ("height", Value::Number(height)),
