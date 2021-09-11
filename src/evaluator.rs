@@ -1,3 +1,5 @@
+//! Match rule evaluator.
+
 use std::{collections::HashMap, fmt::Display};
 
 use anyhow::{anyhow, bail, Result};

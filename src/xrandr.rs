@@ -1,3 +1,5 @@
+//! XRandR wrapper. Queries an X11 server for available outputs.
+
 use std::{collections::HashMap, convert::TryFrom};
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -72,6 +74,7 @@ pub struct Mode {
     flags: ModeFlag,
 }
 impl Mode {
+    /// Returns true if the given output is currently set to this mode.
     pub fn is_active_on(&self, output: &ConnectedOutput) -> bool {
         output
             .crtc
@@ -80,6 +83,7 @@ impl Mode {
             .map_or(false, |m| m == self)
     }
 
+    /// Returns true if this mode is the preferred mode of the given output.
     pub fn is_preferred_by(&self, output: &ConnectedOutput) -> bool {
         output.preferred_mode.as_ref().map_or(false, |m| m == self)
     }

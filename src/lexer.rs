@@ -1,3 +1,6 @@
+//! Match rule lexer. Converts the string representation of a match rule into
+//! a token stream.
+
 use std::fmt::Display;
 
 use anyhow::{anyhow, Result};

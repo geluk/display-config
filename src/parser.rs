@@ -1,8 +1,11 @@
+//! Match rule parser. Takes a token stream and converts it into an AST.
+
 use std::fmt::Display;
 
-use crate::lexer::{self, Literal, Op, Sep, Token};
 use anyhow::{anyhow, bail, Context, Result};
 use log::{debug, trace};
+
+use crate::lexer::{self, Literal, Op, Sep, Token};
 
 /// Result type for match parsers
 type PResult<'a, T> = Result<(&'a [Token], T)>;

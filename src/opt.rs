@@ -1,3 +1,5 @@
+//! Command line options.
+
 use structopt::{clap::arg_enum, StructOpt};
 
 /// Commandline options for the application.

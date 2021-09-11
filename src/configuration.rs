@@ -1,3 +1,5 @@
+//! Configuration file related structures and logic.
+
 use std::{
     env::{self, VarError},
     fs::{self, File},

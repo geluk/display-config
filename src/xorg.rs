@@ -1,3 +1,5 @@
+//! X11 wrapper.
+
 use anyhow::{bail, Result};
 use log::debug;
 use x11rb::{connection::Connection, protocol::xproto::Screen, rust_connection::RustConnection};
