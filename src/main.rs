@@ -1,5 +1,3 @@
-#![feature(destructuring_assignment)]
-
 mod configuration;
 mod evaluator;
 mod lexer;

@@ -150,10 +150,9 @@ mod test {
 
     #[test]
     fn evaluate_not_negates() {
-        let variables = HashMap::from([
-            ("width", Value::Number(1920)),
-            ("height", Value::Number(1080)),
-        ]);
+        let mut variables = HashMap::new();
+        variables.insert("width", Value::Number(1920));
+        variables.insert("height", Value::Number(1080));
 
         let expr = parser::parse("not 10 > 15 or 10 > 20").unwrap();
         let evaluator = Evaluator::new(variables);
@@ -164,10 +163,9 @@ mod test {
 
     #[test]
     fn evaluate_expr_is_true() {
-        let variables = HashMap::from([
-            ("width", Value::Number(1920)),
-            ("height", Value::Number(1080)),
-        ]);
+        let mut variables = HashMap::new();
+        variables.insert("width", Value::Number(1920));
+        variables.insert("height", Value::Number(1080));
 
         let expr = parser::parse("width >= 1920 and height >= 1080").unwrap();
         let evaluator = Evaluator::new(variables);
@@ -178,10 +176,9 @@ mod test {
 
     #[test]
     fn evaluate_expr_is_false() {
-        let variables = HashMap::from([
-            ("width", Value::Number(1920)),
-            ("height", Value::Number(1080)),
-        ]);
+        let mut variables = HashMap::new();
+        variables.insert("width", Value::Number(1920));
+        variables.insert("height", Value::Number(1080));
 
         let expr = parser::parse("width > 1920 or height > 1080").unwrap();
         let evaluator = Evaluator::new(variables);

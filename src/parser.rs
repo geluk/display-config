@@ -95,9 +95,9 @@ fn expr(tokens: &[Token], prev_p: u8) -> PResult<Expr> {
             // If the lookup fails, the operator cannot be used in unary
             // position, and we'll bail.
             let rp = get_unop_power(*op)?;
-            let rhs;
             // Build an expression from anything that comes after it...
-            (tokens, rhs) = expr(tokens, rp)?;
+            let (tks, rhs) = expr(tokens, rp)?;
+            tokens = tks;
             // ...and construct a unary expression from the operator and the
             // expression we just parsed.
             Expr::Unary(Box::new(UnExpr {
@@ -106,10 +106,10 @@ fn expr(tokens: &[Token], prev_p: u8) -> PResult<Expr> {
             }))
         }
         Token::Sep(_sep) => {
-            let lhs;
-            (tokens, lhs) = expr(tokens, 0)?;
-            (tokens, _) = expect(tokens, |t| matches!(t, Token::Sep(Sep::RParen)))
+            let (tks, lhs) = expr(tokens, 0)?;
+            let (tks, _) = expect(tks, |t| matches!(t, Token::Sep(Sep::RParen)))
                 .context(format!("Expected '{}'", Sep::RParen))?;
+            tokens = tks;
             lhs
         }
     };
@@ -141,14 +141,14 @@ fn expr(tokens: &[Token], prev_p: u8) -> PResult<Expr> {
         // token.
         tokens = &tokens[1..];
 
-        let rhs;
         // Raise the minimum binding power to that of the rhs,
         // and start evaluating everything that comes after the operator.
         // Depending on precedence, this may instantly produce the next atomic
         // expression, or it may continue to  expand the right-hand-side
         // until it finds a weaker token. Whatever it ends up producing can be
         // used as the rhs for our expression.
-        (tokens, rhs) = expr(tokens, rp)?;
+        let (tks, rhs) = expr(tokens, rp)?;
+        tokens = tks;
 
         // Now we have a lhs (the expression we were working on),
         // an operator (the token we just consumed),
