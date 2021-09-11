@@ -48,7 +48,7 @@ fn entry() -> Result<()> {
         .init()?;
 
     if opt.dry_run {
-        eprintln!("Dry-run enabled: command execution will be simulated.");
+        eprintln!("Dry-run enabled: commands will only be printed, not executed.");
     }
 
     trace!("Connecting to X11");
@@ -82,19 +82,27 @@ fn apply(setup: &Setup, monitors: Vec<MatchedMonitor>, dry_run: bool) -> Result<
     info!("Applying setup: '{}'", setup.name);
     let mut env = HashMap::new();
     for monitor in monitors.iter() {
-        debug!("  {} = {}", monitor.alias, monitor.monitor.name);
+        if dry_run {
+            eprintln!(
+                "  Environment variables for {} ({}):",
+                monitor.alias, monitor.monitor.name
+            );
+        } else {
+            debug!("{} = {}", monitor.alias, monitor.monitor.name);
+        }
+
         let vars = matcher::generate_variables(&monitor.monitor)?;
         for (key, value) in vars {
             let key = format!("{}_{}", monitor.alias, key).to_uppercase();
             let value = value.fmt_bash();
-            debug!("    {} = {}", key, value);
+
+            if dry_run {
+                eprintln!("    {} = {}", key, value);
+            } else {
+                debug!("    {} = {}", key, value);
+            }
             env.insert(key, value);
         }
-    }
-    if dry_run {
-        eprintln!("Environment variables available to commands: {:#?}", env);
-    } else {
-        debug!("Environment variables available to commands: {:#?}", env);
     }
 
     if dry_run {
