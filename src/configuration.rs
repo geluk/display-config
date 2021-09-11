@@ -27,7 +27,7 @@ pub struct ConfigurationRoot {
 pub struct Setup {
     pub name: String,
     pub require_monitors: Vec<RequiredMonitor>,
-    #[serde(default)]
+    #[serde(deserialize_with = "string_vec", default)]
     pub apply_commands: Vec<String>,
 }
 
@@ -43,14 +43,31 @@ fn match_rules<'de, D>(deserializer: D) -> Result<Vec<MatchRule>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let visitor = MatchRuleVisitor {};
+    let visitor = StringOrSeqVisitor {
+        mapper: parser::parse,
+    };
 
     deserializer.deserialize_any(visitor)
 }
 
-struct MatchRuleVisitor;
-impl<'de> Visitor<'de> for MatchRuleVisitor {
-    type Value = Vec<MatchRule>;
+fn string_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let visitor = StringOrSeqVisitor {
+        mapper: |str| Ok(str.to_string()),
+    };
+
+    deserializer.deserialize_any(visitor)
+}
+
+/// Parses a sequence of strings, a string, or none to a vector, applying
+/// `mapper` to each string, and produces the result.
+struct StringOrSeqVisitor<T> {
+    mapper: fn(input: &str) -> Result<T>,
+}
+impl<'de, T> Visitor<'de> for StringOrSeqVisitor<T> {
+    type Value = Vec<T>;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter.write_str("a string or a sequence")
@@ -67,8 +84,9 @@ impl<'de> Visitor<'de> for MatchRuleVisitor {
     where
         E: serde::de::Error,
     {
-        let res = parser::parse(v).map_err(|err| E::custom(err.to_string()))?;
-        Ok(vec![res])
+        Ok(vec![
+            (self.mapper)(v).map_err(|err| de::Error::custom(err.to_string()))?
+        ])
     }
 
     fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
@@ -76,9 +94,8 @@ impl<'de> Visitor<'de> for MatchRuleVisitor {
         A: serde::de::SeqAccess<'de>,
     {
         let mut items = Vec::new();
-        while let Some(elem) = seq.next_element::<String>()? {
-            let res = parser::parse(&elem).map_err(|err| de::Error::custom(err.to_string()))?;
-            items.push(res);
+        while let Some(elem) = seq.next_element::<&str>()? {
+            items.push((self.mapper)(elem).map_err(|err| de::Error::custom(err.to_string()))?);
         }
         Ok(items)
     }
