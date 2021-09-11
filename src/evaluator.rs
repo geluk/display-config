@@ -33,9 +33,9 @@ impl Value {
     pub fn fmt_bash(&self) -> String {
         match self {
             Value::Number(v) => format!("{}", v),
-            Value::Bool(true) => format!("1"),
-            Value::Bool(false) => format!("0"),
-            Value::String(v) => format!("{}", v),
+            Value::Bool(true) => "1".to_string(),
+            Value::Bool(false) => "0".to_string(),
+            Value::String(v) => v.clone(),
         }
     }
 }
