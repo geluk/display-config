@@ -107,7 +107,7 @@ pub fn read(config_path: Option<String>) -> Result<ConfigurationRoot> {
     let config_path = config_path
         .map(PathBuf::from)
         .ok_or(())
-        .or_else(|_| default_config_path())
+        .or_else(|_| make_default_config_path())
         .context("Could not determine default configuration file path")?;
 
     if !config_path.exists() {
@@ -125,7 +125,7 @@ pub fn read(config_path: Option<String>) -> Result<ConfigurationRoot> {
     Ok(config_root)
 }
 
-fn default_config_path() -> Result<PathBuf> {
+fn make_default_config_path() -> Result<PathBuf> {
     let home = dirs::home_dir();
     let mut config_dir = match (env::var("XDG_CONFIG_HOME"), home) {
         (Ok(path), _) => PathBuf::from(path),
