@@ -1,6 +1,6 @@
 //! XRandR wrapper. Queries an X11 server for available outputs.
 
-use std::{collections::HashMap, convert::TryFrom};
+use std::{cmp, collections::HashMap, convert::TryFrom};
 
 use anyhow::{anyhow, bail, Context, Result};
 use log::debug;
@@ -34,7 +34,7 @@ pub enum Output {
     Unknown(UnknownOutput),
 }
 
-/// An output with an active monitor, that is connected to the display adapter.
+/// An output with an available monitor, connected to the display adapter.
 #[derive(Debug, Clone)]
 pub struct ConnectedOutput {
     /// The XID of the output.
@@ -60,6 +60,41 @@ impl ConnectedOutput {
     /// Returns whether the output is currently bound to a CRTC.
     pub fn is_active(&self) -> bool {
         self.crtc.is_some()
+    }
+
+    /// Returns the maximum supported resolution. Resolutions are compared by
+    /// comparing their areas. Returns [`None`] if the output has no supported
+    /// modes.
+    pub fn max_resolution(&self) -> Option<&Resolution> {
+        self.supported_modes.iter().map(|m| &m.resolution).max()
+    }
+
+    /// Returns the best supported resolution, which is defined to be the
+    /// resolution of this output's preferred mode. If the output has no
+    /// preferred mode, the maximum supported resolution is returned instead.
+    /// Returns [`None`] if the output has no supported modes.
+    pub fn best_resolution(&self) -> Option<&Resolution> {
+        self.preferred_mode
+            .as_ref()
+            .map(|r| &r.resolution)
+            .or_else(|| self.max_resolution())
+    }
+
+    /// Returns the highest supported refresh rate of the output's best
+    /// resolution (as defined by [`Self::best_resolution()`]).
+    pub fn best_refresh_rate(&self) -> Option<RefreshRate> {
+        // We don't just take the highest possible refresh rate, because
+        // monitors often support higher refresh rates at low-resolution modes.
+        // So, firt we determine the best supported resolution for this monitor.
+        let best_resolution = self.best_resolution()?;
+
+        // Now, we can find all modes with this resolution,
+        // and take the highest refresh rate.
+        self.supported_modes
+            .iter()
+            .filter(|m| &m.resolution == best_resolution)
+            .filter_map(|m| m.refresh_rate)
+            .reduce(f32::max)
     }
 }
 
@@ -129,7 +164,7 @@ impl Dimensions {
 }
 
 /// Resolution in pixels.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolution {
     pub width: u16,
     pub height: u16,
@@ -137,6 +172,20 @@ pub struct Resolution {
 impl Resolution {
     fn new(width: u16, height: u16) -> Self {
         Self { width, height }
+    }
+    fn area(&self) -> u32 {
+        self.width as u32 * self.height as u32
+    }
+}
+impl PartialOrd for Resolution {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        Some(self.area().cmp(&other.area()))
+    }
+}
+
+impl Ord for Resolution {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.area().cmp(&other.area())
     }
 }
 

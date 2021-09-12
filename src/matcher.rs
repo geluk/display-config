@@ -108,6 +108,7 @@ pub fn generate_variables(output: &ConnectedOutput) -> Result<Vec<(&'static str,
         .preferred_mode
         .as_ref()
         .ok_or_else(|| anyhow!("Output '{}' has no preferred mode", output.name))?;
+
     let width = mode.resolution.width as u32;
     let height = mode.resolution.height as u32;
 
@@ -130,8 +131,8 @@ pub fn generate_variables(output: &ConnectedOutput) -> Result<Vec<(&'static str,
         ("is_active", Value::Bool(output.is_active())),
         ("xid", Value::Number(output.id)),
     ];
-    // TODO: put this back when we have float support
-    if let Some(rate) = mode.refresh_rate {
+    // TODO: determine how to deal with floating points here
+    if let Some(rate) = output.best_refresh_rate() {
         let rate = rate.round() as u32;
         variables.push(("refresh_rate", Value::Number(rate)));
     }
