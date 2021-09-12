@@ -1,7 +1,7 @@
 //! X11 wrapper.
 
-use anyhow::{bail, Result};
-use log::debug;
+use anyhow::*;
+use log::*;
 use x11rb::{connection::Connection, protocol::xproto::Screen, rust_connection::RustConnection};
 
 pub struct X11Wrapper {

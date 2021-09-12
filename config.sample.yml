@@ -1,7 +1,7 @@
 # Define your setups in here. Each setup will be evaluated in order.
 # As soon as a matching setup is found, no more setups will be evaluated,
 # and the apply_commands for the matched setup are executed.
-configurations:
+setups:
     # A friendly name for this setup, for your own reference.
   - name: example
     # This setup will be applied if all monitors defined in here are present.
@@ -61,7 +61,7 @@ configurations:
         # Multiline strings can also be used to create longer commands.
       - |
         echo hello from display-config!
-        echo your primary monitor resolution is \
+        echo your primary monitor supports a resolution of \
         ${M_PRIMARY_WIDTH}×${M_PRIMARY_HEIGHT}:${M_PRIMARY_REFRESH_RATE}Hz
         echo your secondary monitor is connected to $M_SECONDARY_OUTPUT
     # - if: $m0.width > 1920

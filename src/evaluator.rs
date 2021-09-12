@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, fmt::Display};
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::*;
 
 use crate::{
     lexer::{Literal, Op},

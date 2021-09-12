@@ -3,16 +3,16 @@
 
 use std::fmt::Display;
 
-use anyhow::{anyhow, Result};
-use log::trace;
+use anyhow::*;
+use log::*;
 use nom::{
     branch::*,
     bytes::complete::*,
     character::{self, complete::one_of},
-    combinator::{all_consuming, map, map_parser},
-    error::{context, convert_error, ErrorKind, ParseError, VerboseError},
+    combinator::*,
+    error::*,
     multi::many0,
-    sequence::{delimited, terminated},
+    sequence::*,
     Err, Finish, IResult,
 };
 

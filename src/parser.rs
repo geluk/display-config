@@ -2,8 +2,8 @@
 
 use std::fmt::Display;
 
-use anyhow::{anyhow, bail, Context, Result};
-use log::{debug, trace};
+use anyhow::*;
+use log::*;
 
 use crate::lexer::{self, Literal, Op, Sep, Token};
 
@@ -83,6 +83,7 @@ fn match_rule(tokens: Vec<Token>) -> Result<Expr> {
 // Thanks to Aleksey Kladov for his clear breakdown of Pratt's algorithm.
 // The implementation in this function mostly follows his example.
 // https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
+// TODO: consume tokens instead of taking a reference to them.
 fn expr(tokens: &[Token], prev_p: u8) -> PResult<Expr> {
     // We're beginning a new (sub)expression. Let's start by trying to build
     // an atomic expression out of the first token we encounter.

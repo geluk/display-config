@@ -2,8 +2,8 @@
 
 use std::{cmp, collections::HashMap, convert::TryFrom};
 
-use anyhow::{anyhow, bail, Context, Result};
-use log::debug;
+use anyhow::*;
+use log::*;
 use sha2::{Digest, Sha256};
 use x11rb::{
     protocol::{

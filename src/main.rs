@@ -9,23 +9,28 @@ mod print;
 mod xorg;
 mod xrandr;
 
-use anyhow::{bail, Result};
-use log::{error, trace};
+use anyhow::*;
+use log::*;
+use opt::Opt;
 
 use crate::xrandr::Xrandr;
 
 fn main() {
     if let Err(error) = entry() {
-        error!("Error: {}\n", error);
-        error!("Caused by: ");
-        for (number, cause) in error.chain().enumerate().skip(1) {
-            error!("  {}: {}", number, cause);
+        error!("Error: {}", error);
+
+        let causes: Vec<_> = error.chain().enumerate().skip(1).collect();
+        if !causes.is_empty() {
+            error!("\nCaused by: ");
+            for (number, cause) in causes {
+                error!("  {}: {}", number, cause);
+            }
         }
     }
 }
 
 fn entry() -> Result<()> {
-    let opt = opt::Opt::from_args();
+    let opt = Opt::from_args();
     let timestamp = match opt.log_timestamps {
         true => stderrlog::Timestamp::Millisecond,
         false => stderrlog::Timestamp::Off,
@@ -46,25 +51,15 @@ fn entry() -> Result<()> {
     let connection = xorg::connect()?;
     let randr = Xrandr::new(&connection);
 
+    execute_operation(opt, randr)
+}
+
+fn execute_operation(opt: Opt, randr: Xrandr) -> Result<()> {
     match opt.operation {
-        opt::Operation::Print => {
-            print::print_configuration(randr.get_all_outputs()?)?;
-        }
+        opt::Operation::Print => print::print_configuration(randr.get_all_outputs()?),
         opt::Operation::Apply => {
             let config_root = configuration::read(opt.config_file)?;
-            let matching_setup = matcher::find_matching_setup(
-                &randr.get_connected_outputs()?,
-                &config_root.configurations,
-            )?;
-
-            match matching_setup {
-                Some((setup, monitors)) => apply::apply(setup, monitors, opt.dry_run)?,
-                None => {
-                    bail!("No setup matches the current configuration")
-                }
-            }
+            apply::try_apply(&randr, config_root, opt.dry_run)
         }
     }
-
-    Ok(())
 }

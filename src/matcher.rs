@@ -1,7 +1,7 @@
 //! Matches connected monitors against setups.
 
-use anyhow::{anyhow, Result};
-use log::{debug, error, trace};
+use anyhow::*;
+use log::*;
 
 use crate::{
     configuration::*,

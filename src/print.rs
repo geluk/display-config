@@ -1,6 +1,6 @@
 //! Logic for the `print` subcommand.
 
-use anyhow::Result;
+use anyhow::*;
 
 use crate::{
     matcher,
