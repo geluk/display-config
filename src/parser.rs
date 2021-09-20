@@ -59,6 +59,43 @@ impl Display for BinExpr {
     }
 }
 
+pub struct Parser {
+    tokens: Vec<Token>,
+}
+
+impl Parser {
+    pub fn new(mut tokens: Vec<Token>) -> Self {
+        tokens.reverse();
+        Self { tokens }
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.tokens.is_empty()
+    }
+
+    pub fn next(&mut self) -> Result<Token> {
+        self.tokens
+            .pop()
+            .ok_or_else(|| anyhow!("Expected another token"))
+    }
+
+    pub fn peek(&self) -> Option<&Token> {
+        self.tokens.last()
+    }
+
+    pub fn expect_sep(&mut self, expected: Sep) -> Result<Sep> {
+        if let Token::Sep(sep) = self.next()? {
+            if sep == expected {
+                Ok(sep)
+            } else {
+                Err(anyhow!("Expected {}", expected))
+            }
+        } else {
+            Err(anyhow!("Expected {}", expected))
+        }
+    }
+}
+
 pub fn parse(input: &str) -> Result<MatchRule> {
     debug!("Parsing match rule: '{}'", input);
     let tokens = lexer::lex(input)?;
@@ -73,9 +110,10 @@ pub fn parse(input: &str) -> Result<MatchRule> {
 }
 
 fn match_rule(tokens: Vec<Token>) -> Result<Expr> {
-    let (tokens, expr) = expr(&tokens, 0)?;
-    if !tokens.is_empty() {
-        bail!("Unexpected token: '{}'", tokens[0]);
+    let mut parser = Parser::new(tokens);
+    let expr = expr(&mut parser, 0)?;
+    if let Some(token) = parser.peek() {
+        bail!("Unexpected token: '{}'", token);
     }
     Ok(expr)
 }
@@ -84,50 +122,48 @@ fn match_rule(tokens: Vec<Token>) -> Result<Expr> {
 // The implementation in this function mostly follows his example.
 // https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
 // TODO: consume tokens instead of taking a reference to them.
-fn expr(tokens: &[Token], prev_p: u8) -> PResult<Expr> {
+fn expr(parser: &mut Parser, prev_p: u8) -> Result<Expr> {
     // We're beginning a new (sub)expression. Let's start by trying to build
     // an atomic expression out of the first token we encounter.
-    let (mut tokens, token) = next(tokens)?;
+    let token = parser.next()?;
     let mut lhs = match token {
         // These are easy enough.
-        Token::Literal(lit) => Expr::Literal(lit.clone()),
-        Token::Ident(ident) => Expr::Ident(ident.clone()),
+        Token::Literal(lit) => Expr::Literal(lit),
+        Token::Ident(ident) => Expr::Ident(ident),
         // We've encountered an operator right at the start,
         // try to treat it as unary.
         Token::Op(op) => {
             // Look up the unary binding power of this operator.
             // If the lookup fails, the operator cannot be used in unary
             // position, and we'll bail.
-            let rp = get_unop_power(*op)?;
+            let rp = get_unop_power(op)?;
             // Build an expression from anything that comes after it...
-            let (tks, rhs) = expr(tokens, rp)?;
-            tokens = tks;
+            let rhs = expr(parser, rp)?;
             // ...and construct a unary expression from the operator and the
             // expression we just parsed.
             Expr::Unary(Box::new(UnExpr {
-                operator: *op,
+                operator: op,
                 right: rhs,
             }))
         }
         Token::Sep(_sep) => {
-            let (tks, lhs) = expr(tokens, 0)?;
-            let (tks, _) = expect(tks, |t| matches!(t, Token::Sep(Sep::RParen)))
-                .context(format!("Expected '{}'", Sep::RParen))?;
-            tokens = tks;
+            let lhs = expr(parser, 0)?;
+            parser.expect_sep(Sep::RParen)?;
             lhs
         }
     };
 
     loop {
-        // The next token should either be a valid operator,
-        // or the end of the expression. Let's try looking for that.
-        let op = match peek_next_op(tokens)? {
-            // We found an operator.
-            Some(op) => op,
-            // No tokens left, finish the expression.
-            None => return Ok((tokens, lhs)),
+        // We've parsed the lhs, now we need to check if there's anything else
+        // coming up. We could find an operator, in which case we'll build a
+        // binary expression, or we could be at the end of the expression, in
+        // which case we'll produce the lhs. If we find anything else, we bail.
+        let op = match parser.peek() {
+            Some(Token::Op(op)) => *op,
+            Some(Token::Sep(Sep::RParen)) | None => return Ok(lhs),
+            Some(token) => bail!("Invalid token '{}'", token),
         };
-        // Next, figure out what to do with the operator.
+        // We have an operator, let's build a binary expression.
         let (lp, rp) = get_binop_power(op)?;
         if lp < prev_p {
             // The next operator is weaker than the previous one we found,
@@ -136,14 +172,15 @@ fn expr(tokens: &[Token], prev_p: u8) -> PResult<Expr> {
             break;
         }
         // Due to the binding power rules we've defined, it's not possible for
-        // the next operator to be equally strong, so it has to be stronger.
+        // the next operator to be equally strong, and since we've already
+        // determined that it isn't weaker, it therefore has to be stronger.
         // That means we should create a new expression based on the lhs we've
         // built up to this point, the token we just discovered, and anything
         // that may come after that token.
 
         // We know we're going to use the operator now, so we can consume the
         // token.
-        tokens = &tokens[1..];
+        parser.next()?;
 
         // Raise the minimum binding power to that of the rhs,
         // and start evaluating everything that comes after the operator.
@@ -151,8 +188,7 @@ fn expr(tokens: &[Token], prev_p: u8) -> PResult<Expr> {
         // expression, or it may continue to  expand the right-hand-side
         // until it finds a weaker token. Whatever it ends up producing can be
         // used as the rhs for our expression.
-        let (tks, rhs) = expr(tokens, rp)?;
-        tokens = tks;
+        let rhs = expr(parser, rp)?;
 
         // Now we have a lhs (the expression we were working on),
         // an operator (the token we just consumed),
@@ -166,7 +202,7 @@ fn expr(tokens: &[Token], prev_p: u8) -> PResult<Expr> {
         }));
     }
 
-    Ok((tokens, lhs))
+    Ok(lhs)
 }
 
 fn get_unop_power(op: Op) -> Result<u8> {
@@ -186,163 +222,97 @@ fn get_binop_power(op: Op) -> Result<(u8, u8)> {
     })
 }
 
-fn peek_next_op(tokens: &[Token]) -> Result<Option<Op>> {
-    let op = match peek(tokens) {
-        Some(Token::Op(op)) => Some(*op),
-        // Reaching EOF or a closing separator means the expression should
-        // finish, which we'll communicate by returning None here.
-        None | Some(Token::Sep(Sep::RParen)) => None,
-        Some(token) => bail!("Invalid token: {:?} (expected binary operator)", token),
-    };
-    Ok(op)
-}
-
-fn expect<F>(tokens: &[Token], m: F) -> PResult<&Token>
-where
-    F: Fn(&Token) -> bool,
-{
-    next(tokens).and_then(move |(tokens, t)| {
-        if m(t) {
-            Ok((tokens, t))
-        } else {
-            Err(anyhow!("Unexpected token"))
-        }
-    })
-}
-
-fn peek(tokens: &[Token]) -> Option<&Token> {
-    if !tokens.is_empty() {
-        Some(&tokens[0])
-    } else {
-        None
-    }
-}
-
-fn next(tokens: &[Token]) -> PResult<&Token> {
-    tokens
-        .get(0)
-        .ok_or_else(|| anyhow!("Expected another token"))
-        .map(|t| (&tokens[1..], t))
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
 
-    type TResult = Result<()>;
+    fn tokens(input: &str) -> Vec<Token> {
+        lexer::lex(input).unwrap()
+    }
+
+    fn valid_match_rule(input: &str) -> Expr {
+        super::match_rule(tokens(input)).unwrap()
+    }
+
+    fn invalid_match_rule(input: &str) -> Error {
+        super::match_rule(tokens(input)).unwrap_err()
+    }
 
     #[test]
-    fn match_rule_unbalanced_closed_parentheses_fails() {
-        let tokens = lexer::lex("(test))").unwrap();
-        let err = match_rule(tokens).unwrap_err();
+    fn unbalanced_closed_parentheses_fails() {
+        let err = invalid_match_rule("(test))");
         println!("{}", err);
     }
 
     #[test]
-    fn expr_stacked_operators_fails() {
-        let tokens = lexer::lex("10 > > 4").unwrap();
-        let err = expr(&tokens, 0).unwrap_err();
+    fn stacked_operators_fails() {
+        let err = invalid_match_rule("10 > > 4");
         println!("{}", err);
     }
 
     #[test]
-    fn expr_unfinished_fails() {
-        let tokens = lexer::lex("10 and").unwrap();
-        let err = expr(&tokens, 0).unwrap_err();
+    fn unfinished_fails() {
+        let err = invalid_match_rule("10 and");
         println!("{}", err);
     }
 
     #[test]
-    fn expr_unbalanced_open_parentheses_fails() {
-        let tokens = lexer::lex("(test").unwrap();
-        let err = expr(&tokens, 0).unwrap_err();
+    fn unbalanced_open_parentheses_fails() {
+        let err = invalid_match_rule("(test");
         println!("{}", err);
     }
 
     #[test]
-    fn expr_stacked_parentheses() -> TResult {
-        let tokens = lexer::lex("((((a))))")?;
-        let (tokens, result) = expr(&tokens, 0)?;
-        println!("{}", result);
-
-        assert_eq!(tokens, []);
-        assert_eq!(result.to_string(), "a");
-        Ok(())
+    fn invalid_operator_fails() {
+        let err = invalid_match_rule("10 not 4");
+        println!("{}", err);
     }
 
     #[test]
-    fn expr_parentheses() -> TResult {
-        let tokens = lexer::lex("a > (b and c)")?;
-        let (tokens, result) = expr(&tokens, 0)?;
-        println!("{}", result);
-
-        assert_eq!(tokens, []);
-        assert_eq!(result.to_string(), "(a > (b and c))");
-        Ok(())
+    fn stacked_parentheses() {
+        let expr = valid_match_rule("((((a))))");
+        assert_eq!(expr.to_string(), "a");
     }
 
     #[test]
-    fn expr_simple_comparison_parses() -> TResult {
-        let tokens = lexer::lex("123 > something")?;
-        let (tokens, result) = expr(&tokens, 0)?;
-        println!("{}", result);
-
-        assert_eq!(tokens, vec![]);
-        assert_eq!(result.to_string(), "(123 > something)");
-        Ok(())
+    fn expr_parentheses() {
+        let expr = valid_match_rule("a > (b and c)");
+        assert_eq!(expr.to_string(), "(a > (b and c))");
     }
 
     #[test]
-    fn expr_boolean_gt_correct_precedence() -> TResult {
-        let tokens = lexer::lex("left and 123 > something")?;
-        let (tokens, result) = expr(&tokens, 0)?;
-        println!("{}", result);
-
-        assert_eq!(tokens, vec![]);
-        assert_eq!(result.to_string(), "(left and (123 > something))");
-        Ok(())
+    fn expr_simple_comparison_parses() {
+        let expr = valid_match_rule("123 > something");
+        assert_eq!(expr.to_string(), "(123 > something)");
     }
 
     #[test]
-    fn expr_gt_boolean_correct_precedence() -> TResult {
-        let tokens = lexer::lex("left > 123 and something")?;
-        let (tokens, result) = expr(&tokens, 0)?;
-        println!("{}", result);
-
-        assert_eq!(tokens, vec![]);
-        assert_eq!(result.to_string(), "((left > 123) and something)");
-        Ok(())
+    fn expr_boolean_gt_correct_precedence() {
+        let expr = valid_match_rule("left and 123 > something");
+        assert_eq!(expr.to_string(), "(left and (123 > something))");
     }
 
     #[test]
-    fn expr_unop_comp_parses() -> TResult {
-        let tokens = lexer::lex("not 10 > 15")?;
-        let (tokens, result) = expr(&tokens, 0)?;
-        println!("{}", result);
-
-        assert_eq!(tokens, vec![]);
-        assert_eq!(result.to_string(), "(not (10 > 15))");
-        Ok(())
+    fn expr_gt_boolean_correct_precedence() {
+        let expr = valid_match_rule("left > 123 and something");
+        assert_eq!(expr.to_string(), "((left > 123) and something)");
     }
 
     #[test]
-    fn expr_unop_and_parses() -> TResult {
-        let tokens = lexer::lex("right and not left and right")?;
-        let (tokens, result) = expr(&tokens, 0)?;
-        println!("{}", result);
-
-        assert_eq!(tokens, vec![]);
-        assert_eq!(result.to_string(), "((right and (not left)) and right)");
-        Ok(())
+    fn expr_unop_comp_parses() {
+        let expr = valid_match_rule("not 10 > 15");
+        assert_eq!(expr.to_string(), "(not (10 > 15))");
     }
 
     #[test]
-    fn expr_literal_parses() -> TResult {
-        let tokens = lexer::lex("123")?;
-        let (tokens, result) = expr(&tokens, 0)?;
+    fn expr_unop_and_parses() {
+        let expr = valid_match_rule("right and not left and right");
+        assert_eq!(expr.to_string(), "((right and (not left)) and right)");
+    }
 
-        assert_eq!(tokens, []);
-        assert_eq!(result, Expr::Literal(Literal::Number(123)));
-        Ok(())
+    #[test]
+    fn expr_literal_parses() {
+        let expr = valid_match_rule("123");
+        assert_eq!(expr, Expr::Literal(Literal::Number(123)));
     }
 }
