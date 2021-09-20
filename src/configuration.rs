@@ -163,7 +163,7 @@ mod test {
 
     #[test]
     fn no_configurations() -> Result {
-        let config: ConfigurationRoot = serde_yaml::from_str("configurations: []").unwrap();
+        let config: ConfigurationRoot = serde_yaml::from_str("setups: []").unwrap();
         println!("Configuration: {:#?}", config);
         Ok(())
     }
@@ -171,7 +171,7 @@ mod test {
     #[test]
     fn complex_yaml_ok() -> Result {
         let input = r#"
-configurations:
+setups:
 - name: example
   require_monitors:
   - output: DVI-I-1
