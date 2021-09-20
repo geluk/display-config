@@ -213,8 +213,8 @@ pub fn separator(input: &str) -> MResult<Sep> {
 pub fn op(input: &str) -> MResult<Op> {
     let gte = map_token(">=", Op::Gte);
     let lte = map_token("<=", Op::Lte);
-    let eq = map_token("=", Op::Eq);
     let neq = map_token("!=", Op::Neq);
+    let eq = map_token("=", Op::Eq);
     let gt = map_token(">", Op::Gt);
     let lt = map_token("<", Op::Lt);
     let and = map(keyword("and"), |_| Op::And);
@@ -223,7 +223,7 @@ pub fn op(input: &str) -> MResult<Op> {
 
     context(
         "binary operator (expected any of: =, >, <, >=, <=, 'and', 'or')",
-        alt((gte, lte, eq, neq, gt, lt, and, or, not)),
+        alt((gte, lte, neq, eq, gt, lt, and, or, not)),
     )(input)
 }
 
