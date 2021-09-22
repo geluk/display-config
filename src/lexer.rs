@@ -29,6 +29,7 @@ const VARIABLE_PATTERN: &str = "abcdefghijklmnopqrstuvwxyz_";
 pub enum Token {
     // TODO: emit position information
     Op(Op),
+    CmpOp(CmpOp),
     Sep(Sep),
     Literal(Literal),
     Ident(String),
@@ -36,10 +37,11 @@ pub enum Token {
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Token::Op(op) => write!(f, "{}", op),
-            Token::Sep(sep) => write!(f, "{}", sep),
-            Token::Literal(lit) => write!(f, "{}", lit),
-            Token::Ident(id) => write!(f, "{}", id),
+            Token::Op(t) => write!(f, "{}", t),
+            Token::CmpOp(t) => write!(f, "{}", t),
+            Token::Sep(t) => write!(f, "{}", t),
+            Token::Literal(t) => write!(f, "{}", t),
+            Token::Ident(t) => write!(f, "{}", t),
         }
     }
 }
@@ -61,15 +63,36 @@ impl Display for Literal {
     }
 }
 
-/// An operator, either binary or unary.
+/// A comparison operator, either binary or unary.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Op {
+pub enum CmpOp {
     Eq,
     Neq,
     Gt,
     Lt,
     Gte,
     Lte,
+}
+impl Display for CmpOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                CmpOp::Eq => "=",
+                CmpOp::Neq => "!=",
+                CmpOp::Gt => ">",
+                CmpOp::Lt => "<",
+                CmpOp::Gte => ">=",
+                CmpOp::Lte => "<=",
+            }
+        )
+    }
+}
+
+/// An operator, either binary or unary.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Op {
     And,
     Or,
     Not,
@@ -80,12 +103,6 @@ impl Display for Op {
             f,
             "{}",
             match self {
-                Op::Eq => "=",
-                Op::Neq => "!=",
-                Op::Gt => ">",
-                Op::Lt => "<",
-                Op::Gte => ">=",
-                Op::Lte => "<=",
                 Op::And => "and",
                 Op::Or => "or",
                 Op::Not => "not",
@@ -155,7 +172,8 @@ pub fn token_and_whitespace(input: &str) -> MResult<Token> {
 /// Reads a single token.
 pub fn token(input: &str) -> MResult<Token> {
     let sep = map(separator, Token::Sep);
-    let op = map(op, Token::Op);
+    let cmp_op = map(comparison_operator, Token::CmpOp);
+    let op = map(operator, Token::Op);
     let lit = map(literal, Token::Literal);
     let id = map(variable, Token::Ident);
 
@@ -164,7 +182,7 @@ pub fn token(input: &str) -> MResult<Token> {
     // variables, because they also match the variable parsing rules.
     // Because of this, we start with the most specific token types, and then
     // we gradually widen our search.
-    alt((sep, op, lit, id))(input)
+    alt((sep, cmp_op, op, lit, id))(input)
 }
 
 /// Reads a variable. Returns a string containing the variable name.
@@ -177,28 +195,41 @@ pub fn literal(input: &str) -> MResult<Literal> {
     let number = map(character::complete::u32, Literal::Number);
     let b_true = map(keyword("true"), |_| Literal::Bool(true));
     let b_false = map(keyword("false"), |_| Literal::Bool(false));
-    let string = map(string, |str| Literal::String(str.to_string()));
+    let string = map(string, Literal::String);
 
     alt((number, b_true, b_false, string))(input)
 }
 
 /// Reads a string literal.
-pub fn string(input: &str) -> MResult<&str> {
-    delimited(
-        tag(r#"""#),
-        escaped(
-            // This tag matches the normal (non-control) characters.
-            is_not(r#"\""#),
-            // This tag matches the control character.
-            '\\',
-            // This tag matches the escaped characters:
-            // \   : because it's already used as a control character
-            // "   : because we need to be able to escape quotes
-            // rnt : to provide an easy way to insert common whitespace characters
-            one_of(r#"\"rnt"#),
+pub fn string(input: &str) -> MResult<String> {
+    map(
+        delimited(
+            // Start with a quote
+            tag(r#"""#),
+            escaped(
+                // This tag matches the normal (non-control) characters.
+                is_not(r#"\""#),
+                // This tag matches the control character.
+                '\\',
+                // This tag matches the escaped characters:
+                // \   : because it's already used as a control character
+                // "   : because we need to be able to escape quotes
+                // rnt : to provide an easy way to insert common whitespace characters
+                one_of(r#"\"rnt"#),
+            ),
+            tag(r#"""#),
         ),
-        tag(r#"""#),
+        resolve_escapes,
     )(input)
+}
+
+fn resolve_escapes(escaped: &str) -> String {
+    escaped
+        .replace(r#"\\"#, "\\")
+        .replace(r#"\""#, "\"")
+        .replace(r#"\r"#, "\r")
+        .replace(r#"\n"#, "\n")
+        .replace(r#"\t"#, "\t")
 }
 
 /// Reads a separator.
@@ -209,22 +240,25 @@ pub fn separator(input: &str) -> MResult<Sep> {
     alt((lbrace, rbrace))(input)
 }
 
+/// Reads a comparison operator.
+pub fn comparison_operator(input: &str) -> MResult<CmpOp> {
+    let gte = map_token(">=", CmpOp::Gte);
+    let lte = map_token("<=", CmpOp::Lte);
+    let neq = map_token("!=", CmpOp::Neq);
+    let eq = map_token("=", CmpOp::Eq);
+    let gt = map_token(">", CmpOp::Gt);
+    let lt = map_token("<", CmpOp::Lt);
+
+    alt((gte, lte, neq, eq, gt, lt))(input)
+}
+
 /// Reads an operator.
-pub fn op(input: &str) -> MResult<Op> {
-    let gte = map_token(">=", Op::Gte);
-    let lte = map_token("<=", Op::Lte);
-    let neq = map_token("!=", Op::Neq);
-    let eq = map_token("=", Op::Eq);
-    let gt = map_token(">", Op::Gt);
-    let lt = map_token("<", Op::Lt);
+pub fn operator(input: &str) -> MResult<Op> {
     let and = map(keyword("and"), |_| Op::And);
     let or = map(keyword("or"), |_| Op::Or);
     let not = map(keyword("not"), |_| Op::Not);
 
-    context(
-        "binary operator (expected any of: =, >, <, >=, <=, 'and', 'or')",
-        alt((gte, lte, neq, eq, gt, lt, and, or, not)),
-    )(input)
+    alt((and, or, not))(input)
 }
 
 /// Maps a tag string to a token.
@@ -278,13 +312,13 @@ mod test {
             result,
             vec![
                 ident("note"),
-                Token::Op(Op::Gt),
+                Token::CmpOp(CmpOp::Gt),
                 Token::Literal(Literal::Number(4)),
                 Token::Op(Op::And),
                 Token::Sep(Sep::LParen),
                 Token::Op(Op::Not),
                 ident("test"),
-                Token::Op(Op::Eq),
+                Token::CmpOp(CmpOp::Eq),
                 ident("andy"),
                 Token::Sep(Sep::RParen),
             ]
@@ -384,7 +418,7 @@ mod test {
         assert_eq!(output, "");
         assert_eq!(
             result,
-            Literal::String(String::from(r#"a\" test\\ \n\rstring"#))
+            Literal::String(String::from("a\" test\\ \n\rstring"))
         );
     }
 
@@ -403,7 +437,7 @@ mod test {
         let value = r#""a \\ backslash""#;
         let (output, result) = string(value).unwrap();
         assert_eq!(output, "");
-        assert_eq!(result, r#"a \\ backslash"#);
+        assert_eq!(result, "a \\ backslash");
     }
 
     #[test]
@@ -411,7 +445,7 @@ mod test {
         let value = r#""a \" double quote""#;
         let (output, result) = string(value).unwrap();
         assert_eq!(output, "");
-        assert_eq!(result, r#"a \" double quote"#);
+        assert_eq!(result, "a \" double quote");
     }
 
     #[test]
@@ -435,52 +469,54 @@ mod test {
         println!("{}", error);
     }
 
-    // bin_op tests
-    // -------------
+    // comparison operator tests
+    // -------------------------
     #[test]
     fn lt_parses() {
         let value = "<";
-        let (output, result) = op(value).unwrap();
+        let (output, result) = comparison_operator(value).unwrap();
         assert_eq!(output, "");
-        assert_eq!(result, Op::Lt);
+        assert_eq!(result, CmpOp::Lt);
     }
 
     #[test]
     fn gt_parses() {
         let value = ">";
-        let (output, result) = op(value).unwrap();
+        let (output, result) = comparison_operator(value).unwrap();
         assert_eq!(output, "");
-        assert_eq!(result, Op::Gt);
+        assert_eq!(result, CmpOp::Gt);
     }
 
     #[test]
     fn eq_parses() {
         let value = "=";
-        let (output, result) = op(value).unwrap();
+        let (output, result) = comparison_operator(value).unwrap();
         assert_eq!(output, "");
-        assert_eq!(result, Op::Eq);
+        assert_eq!(result, CmpOp::Eq);
     }
 
     #[test]
     fn gte_parses() {
         let value = ">=";
-        let (output, result) = op(value).unwrap();
+        let (output, result) = comparison_operator(value).unwrap();
         assert_eq!(output, "");
-        assert_eq!(result, Op::Gte);
+        assert_eq!(result, CmpOp::Gte);
     }
 
     #[test]
     fn lte_parses() {
         let value = "<=";
-        let (output, result) = op(value).unwrap();
+        let (output, result) = comparison_operator(value).unwrap();
         assert_eq!(output, "");
-        assert_eq!(result, Op::Lte);
+        assert_eq!(result, CmpOp::Lte);
     }
 
+    // operator tests
+    // --------------
     #[test]
     fn and_parses() {
         let value = "and";
-        let (output, result) = op(value).unwrap();
+        let (output, result) = operator(value).unwrap();
         assert_eq!(output, "");
         assert_eq!(result, Op::And);
     }
@@ -488,17 +524,15 @@ mod test {
     #[test]
     fn or_parses() {
         let value = "or";
-        let (output, result) = op(value).unwrap();
+        let (output, result) = operator(value).unwrap();
         assert_eq!(output, "");
         assert_eq!(result, Op::Or);
     }
 
-    // op tests
-    // --------------
     #[test]
     fn op_parses() {
         let value = "not";
-        let (output, result) = op(value).unwrap();
+        let (output, result) = operator(value).unwrap();
         assert_eq!(output, "");
         assert_eq!(result, Op::Not);
     }
@@ -506,14 +540,14 @@ mod test {
     #[test]
     fn op_starts_with_but_invalid_fails() {
         let value = "note";
-        let result = op(value).unwrap_err();
+        let result = operator(value).unwrap_err();
         println!("Result: {}", result);
     }
 
     #[test]
     fn op_invalid_fails() {
         let value = "any";
-        let result = op(value).unwrap_err();
+        let result = operator(value).unwrap_err();
         println!("Result: {}", result);
     }
 

@@ -5,7 +5,7 @@ use std::{collections::HashMap, fmt::Display};
 use anyhow::*;
 
 use crate::{
-    lexer::{Literal, Op},
+    lexer::{CmpOp, Literal, Op},
     parser::*,
 };
 
@@ -73,33 +73,68 @@ impl Evaluator {
             Expr::Unary(un) => self.evaluate_unary(un),
             Expr::Literal(lit) => self.evaluate_literal(lit),
             Expr::Ident(id) => self.evaluate_ident(id.clone()),
+            Expr::Cmp(cmp) => self.evaluate_cmp(cmp),
         }
+    }
+
+    fn evaluate_cmp(&self, cmp: &CmpExpr) -> Result<Value> {
+        for (i, op) in cmp.operators.iter().enumerate() {
+            let left = cmp
+                .operands
+                .get(i)
+                .ok_or_else(|| anyhow!("Invalid comparison expression"))?;
+            let right = cmp
+                .operands
+                .get(i + 1)
+                .ok_or_else(|| anyhow!("Invalid comparison expression"))?;
+
+            // If we want to prevent multiple evaluation in the future,
+            // we can fix it here.
+            let left = self.evaluate_expr(left)?;
+            let right = self.evaluate_expr(right)?;
+
+            let outcome = match (left, right) {
+                (Value::Number(l), Value::Number(r)) => match op {
+                    CmpOp::Eq => l == r,
+                    CmpOp::Neq => l != r,
+                    CmpOp::Gt => l > r,
+                    CmpOp::Lt => l < r,
+                    CmpOp::Gte => l >= r,
+                    CmpOp::Lte => l <= r,
+                },
+                (Value::Bool(l), Value::Bool(r)) => match op {
+                    CmpOp::Eq => l == r,
+                    CmpOp::Neq => l != r,
+                    _ => bail!("Invalid operands for '{}'", op),
+                },
+                (Value::String(l), Value::String(r)) => match op {
+                    CmpOp::Eq => l == r,
+                    CmpOp::Neq => l != r,
+                    _ => bail!("Invalid operands for '{}'", op),
+                },
+                (l, r) => {
+                    bail!("Unable to compare {} with {}", l.type_name(), r.type_name());
+                }
+            };
+            // We can short-circuit if evaluation fails.
+            if !outcome {
+                return Ok(Value::Bool(false));
+            }
+        }
+        Ok(Value::Bool(true))
     }
 
     fn evaluate_binary(&self, bin: &BinExpr) -> Result<Value> {
         let left = self.evaluate_expr(&bin.left)?;
         let right = self.evaluate_expr(&bin.right)?;
         let outcome = match (left, right) {
-            (Value::Number(l), Value::Number(r)) => match bin.operator {
-                Op::Eq => l == r,
-                Op::Neq => l != r,
-                Op::Gt => l > r,
-                Op::Lt => l < r,
-                Op::Gte => l >= r,
-                Op::Lte => l <= r,
-                _ => bail!("Invalid operands for '{}'", bin.operator),
-            },
             (Value::Bool(l), Value::Bool(r)) => match bin.operator {
                 Op::And => l && r,
                 Op::Or => l || r,
                 _ => bail!("Invalid operands for '{}'", bin.operator),
             },
-            (Value::String(l), Value::String(r)) => match bin.operator {
-                Op::Eq => l == r,
-                _ => bail!("Invalid operands for '{}'", bin.operator),
-            },
-            (l, r) => {
-                bail!("Unable to compare {} with {}", l.type_name(), r.type_name());
+            (_, _) => {
+                bail!("Invalid operands for '{}'", bin.operator);
             }
         };
 
@@ -142,7 +177,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn evaluate_unbound_variable_error() {
+    fn unbound_variable_error() {
         let variables = HashMap::new();
         let rule = parser::parse("width >= 1920 and height >= 1080").unwrap();
         let evaluator = Evaluator::new(variables);
@@ -151,7 +186,37 @@ mod test {
     }
 
     #[test]
-    fn evaluate_not_negates() {
+    fn comparison_true() {
+        let variables = HashMap::new();
+        let rule = parser::parse("1 <= 1 < 2 < 3").unwrap();
+        let evaluator = Evaluator::new(variables);
+
+        let res = evaluator.evaluate(&rule).unwrap();
+        assert!(res);
+    }
+
+    #[test]
+    fn comparison_false() {
+        let variables = HashMap::new();
+        let rule = parser::parse("1 <= 1 < 2 < 2").unwrap();
+        let evaluator = Evaluator::new(variables);
+
+        let res = evaluator.evaluate(&rule).unwrap();
+        assert!(!res);
+    }
+
+    #[test]
+    fn comparison_equality_true() {
+        let variables = HashMap::new();
+        let rule = parser::parse("1 = 1 != 2 = 2").unwrap();
+        let evaluator = Evaluator::new(variables);
+
+        let res = evaluator.evaluate(&rule).unwrap();
+        assert!(res);
+    }
+
+    #[test]
+    fn not_negates() {
         let mut variables = HashMap::new();
         variables.insert("width", Value::Number(1920));
         variables.insert("height", Value::Number(1080));
@@ -164,7 +229,7 @@ mod test {
     }
 
     #[test]
-    fn evaluate_expr_is_true() {
+    fn expr_is_true() {
         let mut variables = HashMap::new();
         variables.insert("width", Value::Number(1920));
         variables.insert("height", Value::Number(1080));
@@ -177,7 +242,7 @@ mod test {
     }
 
     #[test]
-    fn evaluate_expr_is_false() {
+    fn expr_is_false() {
         let mut variables = HashMap::new();
         variables.insert("width", Value::Number(1920));
         variables.insert("height", Value::Number(1080));
