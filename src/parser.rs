@@ -27,7 +27,7 @@ pub enum Expr {
     Cmp(Box<CmpExpr>),
 }
 impl Display for Expr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Expr::Literal(lit) => write!(f, "{}", lit),
             Expr::Ident(id) => write!(f, "{}", id),
@@ -44,7 +44,7 @@ pub struct UnExpr {
     pub right: Expr,
 }
 impl Display for UnExpr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "({} {})", self.operator, self.right)
     }
 }
@@ -56,7 +56,7 @@ pub struct BinExpr {
     pub right: Expr,
 }
 impl Display for BinExpr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "({} {} {})", self.left, self.operator, self.right)
     }
 }
@@ -67,7 +67,7 @@ pub struct CmpExpr {
     pub operands: Vec<Expr>,
 }
 impl Display for CmpExpr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut operands_iter = self.operands.iter();
         let mut operators_iter = self.operators.iter();
         let mut take_operand = false;
@@ -140,7 +140,6 @@ fn match_rule(tokens: Vec<Token>) -> Result<Expr> {
     Ok(expr)
 }
 
-// TODO: consume tokens instead of taking a reference to them.
 fn expr(parser: &mut Parser, prev_p: u8) -> Result<Expr> {
     // We're beginning a new (sub)expression. Let's start by trying to build
     // an atomic expression out of the first token we encounter.
@@ -151,32 +150,23 @@ fn expr(parser: &mut Parser, prev_p: u8) -> Result<Expr> {
         Token::Ident(ident) => Expr::Ident(ident),
         // We've encountered an operator right at the start,
         // try to treat it as unary.
-        Token::Op(op) => {
-            // Look up the unary binding power of this operator.
-            // If the lookup fails, the operator cannot be used in unary
-            // position, and we'll bail.
-            let rp = get_unop_power(op)?;
-            // Build an expression from anything that comes after it...
-            let rhs = expr(parser, rp)?;
-            // ...and construct a unary expression from the operator and the
-            // expression we just parsed.
-            Expr::Unary(Box::new(UnExpr {
-                operator: op,
-                right: rhs,
-            }))
-        }
+        Token::Op(op) => un_expr(parser, op)?,
         Token::CmpOp(cmp) => {
             bail!(
                 "Unexpected comparison operator at expression start: '{}'",
                 cmp
             );
         }
-        Token::Sep(_sep) => {
+        Token::Sep(Sep::LParen) => {
             let lhs = expr(parser, 0)?;
             parser.expect_sep(Sep::RParen)?;
             lhs
         }
+        Token::Sep(Sep::RParen) => {
+            bail!("Unexpected closing parenthesis at expression start")
+        }
     };
+    // Now let's finish the expression based on what kind of token comes next.
     let next = parser.peek();
     match next {
         Some(Token::Op(op)) => {
@@ -196,6 +186,21 @@ fn expr(parser: &mut Parser, prev_p: u8) -> Result<Expr> {
             )
         }
     }
+}
+
+fn un_expr(parser: &mut Parser, op: Op) -> Result<Expr> {
+    // Look up the unary binding power of this operator.
+    // If the lookup fails, the operator cannot be used in unary
+    // position, and we'll bail.
+    let rp = get_unop_power(op)?;
+    // Build an expression from anything that comes after it...
+    let rhs = expr(parser, rp)?;
+    // ...and construct a unary expression from the operator and the
+    // expression we just parsed.
+    Ok(Expr::Unary(Box::new(UnExpr {
+        operator: op,
+        right: rhs,
+    })))
 }
 
 // Thanks to Aleksey Kladov for his clear breakdown of Pratt's algorithm.
@@ -244,13 +249,15 @@ fn bin_expr(parser: &mut Parser, mut lhs: Expr, mut op: Op, prev_p: u8) -> Resul
         op = match parser.peek() {
             Some(Token::Op(op)) => *op,
             Some(Token::Sep(Sep::RParen)) | None => return Ok(lhs),
+            Some(Token::CmpOp(op)) => {
+                let op = *op;
+                return cmp_expr(parser, lhs, op, prev_p);
+            }
             Some(token) => bail!("Invalid token in binary expression '{}'", token),
         };
     }
 }
 
-// TODO: Assignment should beat comparison, as soon as we support it we should
-// verify that `a + b > c` parses correctly to `((a + b) > c)`
 fn cmp_expr(parser: &mut Parser, lhs: Expr, mut op: CmpOp, prev_p: u8) -> Result<Expr> {
     let mut exprs = vec![lhs];
     let mut ops = vec![];
@@ -328,7 +335,13 @@ mod test {
     }
 
     #[test]
-    fn unbalanced_closed_parentheses_fails() {
+    fn unfinished_fails() {
+        let err = invalid_match_rule("10 and");
+        println!("{}", err);
+    }
+
+    #[test]
+    fn unbalanced_close_parentheses_fails() {
         let err = invalid_match_rule("(test))");
         println!("{}", err);
     }
@@ -340,14 +353,14 @@ mod test {
     }
 
     #[test]
-    fn unfinished_fails() {
-        let err = invalid_match_rule("10 and");
+    fn unbalanced_open_parentheses_fails() {
+        let err = invalid_match_rule("(test");
         println!("{}", err);
     }
 
     #[test]
-    fn unbalanced_open_parentheses_fails() {
-        let err = invalid_match_rule("(test");
+    fn unbalanced_close_parentheses_at_start_fails() {
+        let err = invalid_match_rule(")test)");
         println!("{}", err);
     }
 

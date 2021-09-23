@@ -1,7 +1,7 @@
 //! Match rule lexer. Converts the string representation of a match rule into
 //! a token stream.
 
-use std::fmt::Display;
+use std::fmt::{self, Display};
 
 use anyhow::*;
 use log::*;
@@ -35,7 +35,7 @@ pub enum Token {
     Ident(String),
 }
 impl Display for Token {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Token::Op(t) => write!(f, "{}", t),
             Token::CmpOp(t) => write!(f, "{}", t),
@@ -54,7 +54,7 @@ pub enum Literal {
     String(String),
 }
 impl Display for Literal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Literal::Number(n) => write!(f, "{}", n),
             Literal::Bool(b) => write!(f, "{}", b),
@@ -74,7 +74,7 @@ pub enum CmpOp {
     Lte,
 }
 impl Display for CmpOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -98,7 +98,7 @@ pub enum Op {
     Not,
 }
 impl Display for Op {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -118,7 +118,7 @@ pub enum Sep {
     RParen,
 }
 impl Display for Sep {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "{}",
@@ -300,7 +300,8 @@ mod test {
     #[test]
     fn token_stream_invalid_error() {
         let value = "note > 4 and \\";
-        token_stream(value).unwrap_err();
+        let error = token_stream(value).unwrap_err();
+        println!("{}", error);
     }
 
     #[test]
