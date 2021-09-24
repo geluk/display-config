@@ -91,7 +91,7 @@ fn match_single_monitor(mon_match: &RequiredMonitor, mon_info: &ConnectedOutput)
     let evl = evaluator::Evaluator::new(variables);
 
     for rule in &mon_match.r#match {
-        if evl.evaluate(rule)? {
+        if evl.evaluate_bool(rule)? {
             trace!("    [v] Rule matches: '{}'", rule.expression);
         } else {
             trace!("    [x] Rule does not match: '{}'", rule.expression);

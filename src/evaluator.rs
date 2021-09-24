@@ -55,7 +55,7 @@ impl Evaluator {
     pub fn new(variables: Variables) -> Self {
         Self { variables }
     }
-    pub fn evaluate(&self, rule: &MatchRule) -> Result<bool> {
+    pub fn evaluate_bool(&self, rule: &MatchRule) -> Result<bool> {
         match self.evaluate_expr(&rule.expression)? {
             Value::Bool(b) => Ok(b),
             v => {
@@ -142,7 +142,7 @@ impl Evaluator {
     }
 
     fn evaluate_unary(&self, un: &UnExpr) -> Result<Value> {
-        let val = self.evaluate_expr(&un.right)?;
+        let val = self.evaluate_expr(&un.operand)?;
         Ok(match val {
             Value::Bool(v) => match un.operator {
                 Op::Not => Value::Bool(!v),
@@ -182,7 +182,7 @@ mod test {
         let rule = parser::parse("width >= 1920 and height >= 1080").unwrap();
         let evaluator = Evaluator::new(variables);
 
-        evaluator.evaluate(&rule).unwrap_err();
+        evaluator.evaluate_bool(&rule).unwrap_err();
     }
 
     #[test]
@@ -191,7 +191,7 @@ mod test {
         let rule = parser::parse("1 <= 1 < 2 < 3").unwrap();
         let evaluator = Evaluator::new(variables);
 
-        let res = evaluator.evaluate(&rule).unwrap();
+        let res = evaluator.evaluate_bool(&rule).unwrap();
         assert!(res);
     }
 
@@ -201,7 +201,7 @@ mod test {
         let rule = parser::parse("1 <= 1 < 2 < 2").unwrap();
         let evaluator = Evaluator::new(variables);
 
-        let res = evaluator.evaluate(&rule).unwrap();
+        let res = evaluator.evaluate_bool(&rule).unwrap();
         assert!(!res);
     }
 
@@ -211,7 +211,7 @@ mod test {
         let rule = parser::parse("1 = 1 != 2 = 2").unwrap();
         let evaluator = Evaluator::new(variables);
 
-        let res = evaluator.evaluate(&rule).unwrap();
+        let res = evaluator.evaluate_bool(&rule).unwrap();
         assert!(res);
     }
 
@@ -223,7 +223,7 @@ mod test {
 
         let expr = parser::parse("not 10 > 15 or 10 > 20").unwrap();
         let evaluator = Evaluator::new(variables);
-        let res = evaluator.evaluate(&expr).unwrap();
+        let res = evaluator.evaluate_bool(&expr).unwrap();
 
         assert!(res);
     }
@@ -236,7 +236,7 @@ mod test {
 
         let expr = parser::parse("width >= 1920 and height >= 1080").unwrap();
         let evaluator = Evaluator::new(variables);
-        let res = evaluator.evaluate(&expr).unwrap();
+        let res = evaluator.evaluate_bool(&expr).unwrap();
 
         assert!(res);
     }
@@ -249,7 +249,7 @@ mod test {
 
         let expr = parser::parse("width > 1920 or height > 1080").unwrap();
         let evaluator = Evaluator::new(variables);
-        let res = evaluator.evaluate(&expr).unwrap();
+        let res = evaluator.evaluate_bool(&expr).unwrap();
 
         assert!(!res);
     }

@@ -41,11 +41,11 @@ impl Display for Expr {
 #[derive(Debug, PartialEq, Eq)]
 pub struct UnExpr {
     pub operator: Op,
-    pub right: Expr,
+    pub operand: Expr,
 }
 impl Display for UnExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({} {})", self.operator, self.right)
+        write!(f, "({} {})", self.operator, self.operand)
     }
 }
 
@@ -199,7 +199,7 @@ fn un_expr(parser: &mut Parser, op: Op) -> Result<Expr> {
     // expression we just parsed.
     Ok(Expr::Unary(Box::new(UnExpr {
         operator: op,
-        right: rhs,
+        operand: rhs,
     })))
 }
 
