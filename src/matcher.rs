@@ -109,11 +109,11 @@ pub fn generate_variables(output: &ConnectedOutput) -> Result<Vec<(&'static str,
         .as_ref()
         .ok_or_else(|| anyhow!("Output '{}' has no preferred mode", output.name))?;
 
-    let width = mode.resolution.width as u32;
-    let height = mode.resolution.height as u32;
+    let width = mode.resolution.width as f64;
+    let height = mode.resolution.height as f64;
 
-    let mm_width = output.dimensions.mm_width;
-    let mm_height = output.dimensions.mm_height;
+    let mm_width = output.dimensions.mm_width as f64;
+    let mm_height = output.dimensions.mm_height as f64;
 
     let edid_hash = output
         .edid_sha256
@@ -129,12 +129,12 @@ pub fn generate_variables(output: &ConnectedOutput) -> Result<Vec<(&'static str,
         ("edid_hash", Value::String(edid_hash)),
         ("output", Value::String(output.name.clone())),
         ("is_active", Value::Bool(output.is_active())),
-        ("xid", Value::Number(output.id)),
+        ("xid", Value::Number(output.id as f64)),
     ];
     // TODO: determine how to deal with floating points here
     if let Some(rate) = output.best_refresh_rate() {
         let rate = rate.round() as u32;
-        variables.push(("refresh_rate", Value::Number(rate)));
+        variables.push(("refresh_rate", Value::Number(rate as f64)));
     }
 
     Ok(variables)

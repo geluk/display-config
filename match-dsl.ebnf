@@ -1,24 +1,29 @@
 
 
 expression           = literal
+                     | identifier
                      | operation
                      | delimited expression;
 
 delimited expression = "(", expression, ")";
 
 (* operations *)
-operation            = binary operation
+operation            = comparison operation
+                     | binary operation
                      | unary operation;
 
-unary operation      = unary operator, expr;
+comparison operation = expression, comparison operator, expression,
+                     { comparison operator, expression }
+unary operation      = unary operator, expression;
 binary operation     = expression, binary operator, expression;
 
 (* operators *)
 unary operator       = "not";
-binary operator      = "and" | "or" | ">" | "<" | "=" | ">=" | "<=";
+binary operator      = "and" | "or";
+comparison operator  = ">" | "<" | "=" | ">=" | "<=";
 
 (* identifiers *)
-identifier           = lowercase { lowercase | digit };
+identifier           = lowercase, { lowercase | digit };
 
 (* literals *)
 literal              = number
@@ -26,15 +31,16 @@ literal              = number
                      | string
                      | resolution;
 
-number               = digit excluding zero, { digit };
+number               = nonzero digit, { digit };
 boolean              = "true" | "false";
 string               = '"', { text }, '"';
 resolution           = number, "x", number, [ ":", number ];
 
 (* definitions *)
-text                 = digit | lowercase | uppercase
-digit excluding zero = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
-digit                = "0" | digit excluding zero;
+text                 = escaped character | ? any valid UTF-8 sequence ?
+escaped character    = '\"' | "\\" | "\r" | "\n" | "\t"
+digit                = "0" | nonzero digit;
+nonzero digit        = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
 
 lowercase            = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i"
                      | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r"

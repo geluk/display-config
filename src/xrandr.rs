@@ -245,8 +245,8 @@ impl<'conn> Xrandr<'conn> {
         let crtcs = resources
             .crtcs
             .iter()
-            .map(|i| {
-                self.create_crtc(*i, &modes, resources.timestamp)
+            .map(|&i| {
+                self.create_crtc(i, &modes, resources.timestamp)
                     .map(|c| (c.id, c))
             })
             .collect::<Result<_>>()?;
@@ -254,7 +254,7 @@ impl<'conn> Xrandr<'conn> {
         let outputs = resources
             .outputs
             .iter()
-            .map(|o| self.create_output(*o, &modes, &crtcs, resources.timestamp))
+            .map(|&o| self.create_output(o, &modes, &crtcs, resources.timestamp))
             .collect::<Result<Vec<_>>>()?;
         Ok(outputs)
     }
@@ -431,9 +431,7 @@ impl<'conn> Xrandr<'conn> {
                     .reply()?;
 
                 if prop.bytes_after > 0 {
-                    // This should be downgraded to a warning once we support
-                    // generating warnings.
-                    bail!(
+                    warn!(
                         "Edid length of {} bytes greater than expected ({} bytes)",
                         // See above for the significance of multiplying by four.
                         prop.length * 4 + prop.bytes_after,

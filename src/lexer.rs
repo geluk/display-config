@@ -15,6 +15,7 @@ use nom::{
     sequence::*,
     Err, Finish, IResult,
 };
+use sha2::digest::generic_array::typenum::Pow;
 
 /// Result type for match parsers.
 type MResult<'inp, O> = IResult<&'inp str, O, VerboseError<&'inp str>>;
@@ -25,7 +26,7 @@ const KEYWORD_PATTERN: &str = "abcdefghijklmnopqrstuvwxyz";
 const VARIABLE_PATTERN: &str = "abcdefghijklmnopqrstuvwxyz_";
 
 /// A token, as emitted by the lexer.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Token {
     // TODO: emit position information
     Op(Op),
@@ -47,9 +48,9 @@ impl Display for Token {
 }
 
 /// A literal, representing a value.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Literal {
-    Number(u32),
+    Number(Number),
     Bool(bool),
     String(String),
 }
@@ -62,6 +63,8 @@ impl Display for Literal {
         }
     }
 }
+
+pub type Number = f64;
 
 /// A comparison operator, either binary or unary.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -96,6 +99,11 @@ pub enum Op {
     And,
     Or,
     Not,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Exp,
 }
 impl Display for Op {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -106,6 +114,11 @@ impl Display for Op {
                 Op::And => "and",
                 Op::Or => "or",
                 Op::Not => "not",
+                Op::Add => "+",
+                Op::Sub => "-",
+                Op::Mul => "*",
+                Op::Div => "/",
+                Op::Exp => "^",
             }
         )
     }
@@ -154,10 +167,10 @@ fn token_stream(input: &str) -> MResult<Vec<Token>> {
     if !input.is_empty() {
         // Token reading stopped, but we still have input left over.
         // This means we've encountered an invalid token. Report it.
-        Err(Err::Failure(VerboseError::from_error_kind(
-            input,
-            ErrorKind::Eof,
-        )))
+        let ctx = VerboseError {
+            errors: vec![(input, VerboseErrorKind::Context("invalid token"))],
+        };
+        Err(Err::Failure(ctx))
     } else {
         Ok((input, tokens))
     }
@@ -192,7 +205,7 @@ pub fn variable(input: &str) -> MResult<String> {
 
 /// Reads a literal. Returns the value of the literal.
 pub fn literal(input: &str) -> MResult<Literal> {
-    let number = map(character::complete::u32, Literal::Number);
+    let number = map(number, Literal::Number);
     let b_true = map(keyword("true"), |_| Literal::Bool(true));
     let b_false = map(keyword("false"), |_| Literal::Bool(false));
     let string = map(string, Literal::String);
@@ -202,6 +215,14 @@ pub fn literal(input: &str) -> MResult<Literal> {
 
 /// Reads a string literal.
 pub fn string(input: &str) -> MResult<String> {
+    fn resolve_escapes(escaped: &str) -> String {
+        escaped
+            .replace(r#"\\"#, "\\")
+            .replace(r#"\""#, "\"")
+            .replace(r#"\r"#, "\r")
+            .replace(r#"\n"#, "\n")
+            .replace(r#"\t"#, "\t")
+    }
     map(
         delimited(
             // Start with a quote
@@ -223,13 +244,21 @@ pub fn string(input: &str) -> MResult<String> {
     )(input)
 }
 
-fn resolve_escapes(escaped: &str) -> String {
-    escaped
-        .replace(r#"\\"#, "\\")
-        .replace(r#"\""#, "\"")
-        .replace(r#"\r"#, "\r")
-        .replace(r#"\n"#, "\n")
-        .replace(r#"\t"#, "\t")
+/// Reads a number literal.
+pub fn number(input: &str) -> MResult<f64> {
+    let (input, mut whole) = map(character::complete::i64, |v| v as f64)(input)?;
+    let (input, fraction) = opt(preceded(tag("."), consumed(character::complete::u64)))(input)?;
+    let (input, exponent) = opt(preceded(tag("e"), character::complete::i32))(input)?;
+
+    if let Some((text, fraction)) = fraction {
+        let char_count = text.len() as i32;
+        let fraction = fraction as f64 / 10f64.powi(char_count);
+        whole = whole + fraction;
+    }
+    if let Some(exponent) = exponent {
+        whole = whole * 10f64.powi(exponent);
+    }
+    return Ok((input, whole));
 }
 
 /// Reads a separator.
@@ -257,8 +286,13 @@ pub fn operator(input: &str) -> MResult<Op> {
     let and = map(keyword("and"), |_| Op::And);
     let or = map(keyword("or"), |_| Op::Or);
     let not = map(keyword("not"), |_| Op::Not);
+    let add = map_token("+", Op::Add);
+    let sub = map_token("-", Op::Sub);
+    let mul = map_token("*", Op::Mul);
+    let div = map_token("/", Op::Div);
+    let exp = map_token("^", Op::Exp);
 
-    alt((and, or, not))(input)
+    alt((and, or, not, add, sub, mul, div, exp))(input)
 }
 
 /// Maps a tag string to a token.
@@ -314,7 +348,7 @@ mod test {
             vec![
                 ident("note"),
                 Token::CmpOp(CmpOp::Gt),
-                Token::Literal(Literal::Number(4)),
+                Token::Literal(Literal::Number(4.)),
                 Token::Op(Op::And),
                 Token::Sep(Sep::LParen),
                 Token::Op(Op::Not),
@@ -393,7 +427,7 @@ mod test {
         let value = "12320";
         let (output, result) = literal(value).unwrap();
         assert_eq!(output, "");
-        assert_eq!(result, Literal::Number(12320));
+        assert_eq!(result, Literal::Number(12320.));
     }
 
     #[test]
@@ -531,11 +565,27 @@ mod test {
     }
 
     #[test]
-    fn op_parses() {
+    fn not_parses() {
         let value = "not";
         let (output, result) = operator(value).unwrap();
         assert_eq!(output, "");
         assert_eq!(result, Op::Not);
+    }
+
+    #[test]
+    fn add_parses() {
+        let value = "+";
+        let (output, result) = operator(value).unwrap();
+        assert_eq!(output, "");
+        assert_eq!(result, Op::Add);
+    }
+
+    #[test]
+    fn sub_parses() {
+        let value = "-";
+        let (output, result) = operator(value).unwrap();
+        assert_eq!(output, "");
+        assert_eq!(result, Op::Sub);
     }
 
     #[test]

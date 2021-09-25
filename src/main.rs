@@ -26,6 +26,7 @@ fn main() {
                 error!("  {}: {}", number, cause);
             }
         }
+        std::process::exit(1)
     }
 }
 

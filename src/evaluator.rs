@@ -5,7 +5,7 @@ use std::{collections::HashMap, fmt::Display};
 use anyhow::*;
 
 use crate::{
-    lexer::{CmpOp, Literal, Op},
+    lexer::{CmpOp, Literal, Number, Op},
     parser::*,
 };
 
@@ -128,29 +128,41 @@ impl Evaluator {
         let left = self.evaluate_expr(&bin.left)?;
         let right = self.evaluate_expr(&bin.right)?;
         let outcome = match (left, right) {
-            (Value::Bool(l), Value::Bool(r)) => match bin.operator {
+            (Value::Bool(l), Value::Bool(r)) => Value::Bool(match bin.operator {
                 Op::And => l && r,
                 Op::Or => l || r,
-                _ => bail!("Invalid operands for '{}'", bin.operator),
-            },
+                Op::Not => bail!("Operator '{}' cannot be used here", bin.operator),
+                Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Exp => {
+                    bail!("Invalid operands for '{}'", bin.operator)
+                }
+            }),
+            (Value::Number(l), Value::Number(r)) => Value::Number(match bin.operator {
+                Op::Add => l + r,
+                Op::Sub => l - r,
+                Op::Mul => l * r,
+                Op::Div => l / r,
+                Op::Exp => l.powf(r),
+                Op::And | Op::Or | Op::Not => {
+                    bail!(
+                        "Cannot use numeric operands with boolean operator '{}'",
+                        bin.operator
+                    )
+                }
+            }),
             (_, _) => {
                 bail!("Invalid operands for '{}'", bin.operator);
             }
         };
 
-        Ok(Value::Bool(outcome))
+        Ok(outcome)
     }
 
     fn evaluate_unary(&self, un: &UnExpr) -> Result<Value> {
         let val = self.evaluate_expr(&un.operand)?;
-        Ok(match val {
-            Value::Bool(v) => match un.operator {
-                Op::Not => Value::Bool(!v),
-                _ => bail!("Invalid operand for '{}'", un.operator),
-            },
-            _ => {
-                bail!("Invalid operand for '{}'", un.operator);
-            }
+        Ok(match (un.operator, val) {
+            (Op::Not, Value::Bool(v)) => Value::Bool(!v),
+            (Op::Not, _) => bail!("Invalid operand for '{}'", un.operator),
+            _ => bail!("Operator '{}' cannot be used here", un.operator),
         })
     }
 
@@ -216,10 +228,30 @@ mod test {
     }
 
     #[test]
+    fn addition_adds() {
+        let variables = HashMap::new();
+        let rule = parser::parse("100 + 2.1 = 102.1").unwrap();
+        let evaluator = Evaluator::new(variables);
+
+        let res = evaluator.evaluate_bool(&rule).unwrap();
+        assert!(res);
+    }
+
+    #[test]
+    fn multiplication_multiplies() {
+        let variables = HashMap::new();
+        let rule = parser::parse("3.3 * 2.9e2 = 9.57e2").unwrap();
+        let evaluator = Evaluator::new(variables);
+
+        let res = evaluator.evaluate_bool(&rule).unwrap();
+        assert!(res);
+    }
+
+    #[test]
     fn not_negates() {
         let mut variables = HashMap::new();
-        variables.insert("width", Value::Number(1920));
-        variables.insert("height", Value::Number(1080));
+        variables.insert("width", Value::Number(1920.));
+        variables.insert("height", Value::Number(1080.));
 
         let expr = parser::parse("not 10 > 15 or 10 > 20").unwrap();
         let evaluator = Evaluator::new(variables);
@@ -231,8 +263,8 @@ mod test {
     #[test]
     fn expr_is_true() {
         let mut variables = HashMap::new();
-        variables.insert("width", Value::Number(1920));
-        variables.insert("height", Value::Number(1080));
+        variables.insert("width", Value::Number(1920.));
+        variables.insert("height", Value::Number(1080.));
 
         let expr = parser::parse("width >= 1920 and height >= 1080").unwrap();
         let evaluator = Evaluator::new(variables);
@@ -244,8 +276,8 @@ mod test {
     #[test]
     fn expr_is_false() {
         let mut variables = HashMap::new();
-        variables.insert("width", Value::Number(1920));
-        variables.insert("height", Value::Number(1080));
+        variables.insert("width", Value::Number(1920.));
+        variables.insert("height", Value::Number(1080.));
 
         let expr = parser::parse("width > 1920 or height > 1080").unwrap();
         let evaluator = Evaluator::new(variables);

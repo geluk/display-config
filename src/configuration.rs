@@ -98,7 +98,12 @@ where
     D: Deserializer<'de>,
 {
     let visitor = StringOrSeqVisitor {
-        mapper: |s| parser::parse(s).context("Invalid match rule"),
+        mapper: |s| {
+            parser::parse(s).map_err(|e| {
+                let msg = format!("Invalid match rule: {}", e);
+                anyhow!(msg)
+            })
+        },
     };
 
     deserializer.deserialize_any(visitor)

@@ -10,15 +10,13 @@ use log::*;
 
 use crate::lexer::{self, CmpOp, Literal, Op, Sep, Token};
 
-pub type Number = u32;
-
 #[derive(Debug)]
 pub struct MatchRule {
     pub expression: Expr,
     pub original_input: String,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Literal(Literal),
     Ident(String),
@@ -38,7 +36,7 @@ impl Display for Expr {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct UnExpr {
     pub operator: Op,
     pub operand: Expr,
@@ -49,7 +47,7 @@ impl Display for UnExpr {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct BinExpr {
     pub left: Expr,
     pub operator: Op,
@@ -61,10 +59,21 @@ impl Display for BinExpr {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct CmpExpr {
     pub operators: Vec<CmpOp>,
     pub operands: Vec<Expr>,
+}
+impl CmpExpr {
+    pub fn new(operators: Vec<CmpOp>, operands: Vec<Expr>) -> Self {
+        if operators.len() != operands.len() - 1 {
+            panic!("attempted to construct an invalid comparison expression")
+        }
+        Self {
+            operators,
+            operands,
+        }
+    }
 }
 impl Display for CmpExpr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -289,17 +298,18 @@ fn cmp_expr(parser: &mut Parser, lhs: Expr, mut op: CmpOp, prev_p: u8) -> Result
     Ok(if exprs.len() == 1 {
         exprs.pop().unwrap()
     } else {
-        Expr::Cmp(Box::new(CmpExpr {
-            operators: ops,
-            operands: exprs,
-        }))
+        Expr::Cmp(Box::new(CmpExpr::new(ops, exprs)))
     })
 }
 
 fn get_binop_power(op: Op) -> Result<(u8, u8)> {
     Ok(match op {
+        // `or` and `and` should always have the lowest precedence.
         Op::Or => (1, 2),
         Op::And => (3, 4),
+        Op::Add | Op::Sub => (9, 8),
+        Op::Mul | Op::Div => (11, 10),
+        Op::Exp => (15, 14),
         op => bail!("Not a binary operator: '{}'", op),
     })
 }
@@ -307,14 +317,16 @@ fn get_binop_power(op: Op) -> Result<(u8, u8)> {
 fn get_unop_power(op: Op) -> Result<u8> {
     Ok(match op {
         Op::Not => 5,
+        Op::Add | Op::Sub => 13,
         op => bail!("Not a unary operator: '{}'", op),
     })
 }
 
 fn get_cmp_power(op: CmpOp) -> Result<u8> {
     Ok(match op {
-        CmpOp::Eq | CmpOp::Neq => 7,
-        CmpOp::Gt | CmpOp::Lt | CmpOp::Gte | CmpOp::Lte => 9,
+        // Because we support comparison operations in the style of a > b = c,
+        // all comparison operators are treated equally.
+        CmpOp::Eq | CmpOp::Neq | CmpOp::Gt | CmpOp::Lt | CmpOp::Gte | CmpOp::Lte => 7,
     })
 }
 
@@ -377,6 +389,13 @@ mod test {
     }
 
     #[test]
+    fn addition() {
+        let expr = valid_match_rule("a + b and c");
+        assert_eq!(expr.to_string(), "((a + b) and c)");
+        println!("{}", expr);
+    }
+
+    #[test]
     fn big_expression() {
         let expr = valid_match_rule(r#"a and b or c and "something" > 1 > 2 and not 3 > 1 and 2"#);
         println!("{}", expr);
@@ -401,7 +420,13 @@ mod test {
     }
 
     #[test]
-    fn expr_parentheses() {
+    fn comparison_gt_eq() {
+        let expr = valid_match_rule("a = b > c");
+        assert_eq!(expr.to_string(), "(a = b > c)");
+    }
+
+    #[test]
+    fn parentheses() {
         let expr = valid_match_rule("a > (b and c)");
         assert_eq!(expr.to_string(), "(a > (b and c))");
     }
@@ -446,6 +471,6 @@ mod test {
     #[test]
     fn expr_literal_parses() {
         let expr = valid_match_rule("123");
-        assert_eq!(expr, Expr::Literal(Literal::Number(123)));
+        assert_eq!(expr, Expr::Literal(Literal::Number(123.)));
     }
 }
