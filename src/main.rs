@@ -1,11 +1,9 @@
-mod apply;
 mod configuration;
 mod evaluator;
 mod lexer;
 mod matcher;
 mod opt;
 mod parser;
-mod print;
 mod subcommands;
 mod xorg;
 mod xrandr;
@@ -54,13 +52,15 @@ fn entry() -> Result<()> {
 
 fn execute_operation(opt: Opt, randr: Xrandr) -> Result<()> {
     match opt.operation {
-        opt::Operation::Print {} => print::print_configuration(randr.get_all_outputs()?),
+        opt::Operation::Print {} => {
+            subcommands::print::print_configuration(randr.get_all_outputs()?)
+        }
         opt::Operation::Apply { dry_run } => {
             if dry_run {
                 eprintln!("Dry-run enabled: commands will only be printed, not executed.");
             }
             let config_root = configuration::read(opt.config_file)?;
-            apply::try_apply(&randr, config_root, dry_run)
+            subcommands::apply::try_apply(&randr, config_root, dry_run)
         }
         opt::Operation::Eval { expression } => {
             subcommands::eval::evaluate_expression(&randr, &expression.join(" "))
