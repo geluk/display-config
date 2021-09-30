@@ -15,7 +15,6 @@ use nom::{
     sequence::*,
     Err, Finish, IResult,
 };
-use sha2::digest::generic_array::typenum::Pow;
 
 /// Result type for match parsers.
 type MResult<'inp, O> = IResult<&'inp str, O, VerboseError<&'inp str>>;
@@ -253,12 +252,12 @@ pub fn number(input: &str) -> MResult<f64> {
     if let Some((text, fraction)) = fraction {
         let char_count = text.len() as i32;
         let fraction = fraction as f64 / 10f64.powi(char_count);
-        whole = whole + fraction;
+        whole += fraction;
     }
     if let Some(exponent) = exponent {
-        whole = whole * 10f64.powi(exponent);
+        whole *= 10f64.powi(exponent);
     }
-    return Ok((input, whole));
+    Ok((input, whole))
 }
 
 /// Reads a separator.

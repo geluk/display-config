@@ -1,10 +1,6 @@
 use anyhow::Result;
 
-use crate::{
-    evaluator::{self, Evaluator},
-    matcher, parser,
-    xrandr::Xrandr,
-};
+use crate::{evaluator::Evaluator, matcher, parser, xrandr::Xrandr};
 
 pub fn evaluate_expression(randr: &Xrandr, expression: &str) -> Result<()> {
     let rule = parser::parse(expression)?;
