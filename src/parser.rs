@@ -307,8 +307,8 @@ fn get_binop_power(op: Op) -> Result<(u8, u8)> {
         // `or` and `and` should always have the lowest precedence.
         Op::Or => (1, 2),
         Op::And => (3, 4),
-        Op::Add | Op::Sub => (9, 8),
-        Op::Mul | Op::Div => (11, 10),
+        Op::Add | Op::Sub => (9, 10),
+        Op::Mul | Op::Div => (11, 12),
         Op::Exp => (15, 14),
         op => bail!("Not a binary operator: '{}'", op),
     })
@@ -454,6 +454,12 @@ mod test {
         let expr = valid_match_rule("10 > 9 > 8");
         println!("{:#?}", expr);
         assert_eq!(expr.to_string(), "(10 > 9 > 8)");
+    }
+
+    #[test]
+    fn expr_div_mult_precedence() {
+        let expr = valid_match_rule("a / b * c");
+        assert_eq!(expr.to_string(), "((a / b) * c)");
     }
 
     #[test]
