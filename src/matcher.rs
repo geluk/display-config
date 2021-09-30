@@ -1,5 +1,7 @@
 //! Matches connected monitors against setups.
 
+use std::collections::HashMap;
+
 use anyhow::*;
 use log::*;
 
@@ -87,7 +89,7 @@ fn match_single_monitor(mon_match: &RequiredMonitor, mon_info: &ConnectedOutput)
         mon_match.alias
     );
 
-    let variables = generate_variables(mon_info)?.into_iter().collect();
+    let variables = generate_variables_hashmap(mon_info)?;
     let evl = evaluator::Evaluator::new(variables);
 
     for rule in &mon_match.r#match {
@@ -101,6 +103,12 @@ fn match_single_monitor(mon_match: &RequiredMonitor, mon_info: &ConnectedOutput)
 
     trace!("    Match found");
     Ok(true)
+}
+
+pub fn generate_variables_hashmap(
+    output: &ConnectedOutput,
+) -> Result<HashMap<&'static str, Value>> {
+    generate_variables(output).map(|v| v.into_iter().collect())
 }
 
 pub fn generate_variables(output: &ConnectedOutput) -> Result<Vec<(&'static str, Value)>> {

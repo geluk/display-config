@@ -67,7 +67,7 @@ impl Evaluator {
         }
     }
 
-    fn evaluate_expr(&self, expr: &Expr) -> Result<Value> {
+    pub fn evaluate_expr(&self, expr: &Expr) -> Result<Value> {
         match expr {
             Expr::Binary(op) => self.evaluate_binary(op),
             Expr::Unary(un) => self.evaluate_unary(un),

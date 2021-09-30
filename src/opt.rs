@@ -1,6 +1,6 @@
 //! Command line options.
 
-use structopt::{clap::arg_enum, StructOpt};
+use structopt::StructOpt;
 
 /// Commandline options for the application.
 #[derive(Debug, StructOpt)]
@@ -9,18 +9,11 @@ use structopt::{clap::arg_enum, StructOpt};
     about = "Automatically configure your desktop based on the displays connected to it."
 )]
 pub struct Opt {
-    #[structopt(possible_values = &Operation::variants(), case_insensitive = true, help = "Which action to perform")]
+    #[structopt(subcommand, help = "Which action to perform")]
     pub operation: Operation,
 
     #[structopt(short, long)]
     pub config_file: Option<String>,
-
-    #[structopt(
-        short,
-        long,
-        help = "Do not execute any commands, only print what would be done"
-    )]
-    pub dry_run: bool,
 
     #[structopt(
         short,
@@ -34,16 +27,27 @@ pub struct Opt {
     pub log_timestamps: bool,
 }
 
+#[derive(Debug, StructOpt)]
+pub enum Operation {
+    #[structopt(help = "Show all connected monitors and supported modes")]
+    Print {},
+    #[structopt(help = "Find a matching setup from the configuration file and apply it.")]
+    Apply {
+        #[structopt(
+            short,
+            long,
+            help = "Do not execute any commands, only print what would be done"
+        )]
+        dry_run: bool,
+    },
+    Eval {
+        #[structopt()]
+        expression: Vec<String>,
+    },
+}
+
 impl Opt {
     pub fn from_args() -> Opt {
         StructOpt::from_args()
-    }
-}
-
-arg_enum! {
-    #[derive(Debug)]
-    pub enum Operation {
-        Print,
-        Apply,
     }
 }
