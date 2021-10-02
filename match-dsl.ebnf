@@ -19,7 +19,7 @@ binary operation     = expression, binary operator, expression;
 
 (* operators *)
 unary operator       = "not";
-binary operator      = "and" | "or";
+binary operator      = "and" | "or" | "+" | "-" | "*" | "/" | "^";
 comparison operator  = ">" | "<" | "=" | ">=" | "<=";
 
 (* identifiers *)
@@ -33,11 +33,12 @@ literal              = number
 
 number               = nonzero digit, { digit };
 boolean              = "true" | "false";
-string               = '"', { text }, '"';
+string               = '"', { text character }, '"';
 resolution           = number, "x", number, [ ":", number ];
 
 (* definitions *)
-text                 = escaped character | ? any valid UTF-8 sequence ?
+text character       = escaped character
+                     | ? any valid unicode code point except u+005c (\) ?
 escaped character    = '\"' | "\\" | "\r" | "\n" | "\t"
 digit                = "0" | nonzero digit;
 nonzero digit        = "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
