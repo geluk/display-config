@@ -3,7 +3,7 @@
 
 use std::fmt::{self, Display};
 
-use anyhow::*;
+use anyhow::{anyhow, Result};
 use log::*;
 use nom::{
     branch::*,

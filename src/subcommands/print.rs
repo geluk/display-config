@@ -4,7 +4,7 @@ use anyhow::*;
 
 use crate::{
     matcher,
-    xrandr::{ConnectedOutput, Mode, Output},
+    sources::{ConnectedOutput, Mode, Output},
 };
 
 /// Print connected monitors to standard output.

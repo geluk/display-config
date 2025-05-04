@@ -11,7 +11,7 @@ use std::{
 use crate::{
     configuration::{ConfigurationRoot, Setup},
     matcher::{self, MatchedMonitor},
-    xrandr::Xrandr,
+    sources::ConnectedOutput,
 };
 
 type Environment = HashMap<String, String>;
@@ -19,9 +19,12 @@ type Environment = HashMap<String, String>;
 /// Tries to apply a setup. Queries Xrandr for available monitors, matches them
 /// against the setups in the provided configuration file, then executes the
 /// matched setup, or returns an error if there is no matching setup.
-pub fn try_apply(randr: &Xrandr, config_root: ConfigurationRoot, dry_run: bool) -> Result<()> {
-    let matching_setup =
-        matcher::find_matching_setup(&randr.get_connected_outputs()?, &config_root.setups)?;
+pub fn try_apply(
+    outputs: &[ConnectedOutput],
+    config_root: ConfigurationRoot,
+    dry_run: bool,
+) -> Result<()> {
+    let matching_setup = matcher::find_matching_setup(outputs, &config_root.setups)?;
 
     match matching_setup {
         Some((setup, monitors)) => apply(setup, monitors, dry_run),
@@ -83,7 +86,7 @@ fn include_variables(env: &mut Environment, monitor: &MatchedMonitor, dry_run: b
 fn execute_command(command: &str, environment: &Environment) -> Result<()> {
     debug!("Executing command: '{}'", command);
     let cmd = Command::new("bash")
-        .args(&["-c", command])
+        .args(["-c", command])
         .stderr(Stdio::piped())
         .stdout(Stdio::piped())
         .envs(environment)

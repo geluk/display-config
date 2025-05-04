@@ -8,7 +8,7 @@ use log::*;
 use crate::{
     configuration::*,
     evaluator::{self, Value},
-    xrandr::ConnectedOutput,
+    sources::ConnectedOutput,
 };
 
 pub fn find_matching_setup<'config>(
@@ -112,10 +112,12 @@ pub fn generate_variables_hashmap(
 }
 
 pub fn generate_variables(output: &ConnectedOutput) -> Result<Vec<(&'static str, Value)>> {
-    let mode = output
-        .preferred_mode
-        .as_ref()
-        .ok_or_else(|| anyhow!("Output '{}' has no preferred mode", output.name))?;
+    let mode = output.preferred_mode.as_ref().map(Ok).unwrap_or_else(|| {
+        output
+            .supported_modes
+            .first()
+            .ok_or(anyhow!("Output {} has no supported modes", output.name))
+    })?;
 
     let width = mode.resolution.width as f64;
     let height = mode.resolution.height as f64;
@@ -143,6 +145,9 @@ pub fn generate_variables(output: &ConnectedOutput) -> Result<Vec<(&'static str,
     if let Some(rate) = output.best_refresh_rate() {
         let rate = rate.round() as u32;
         variables.push(("refresh_rate", Value::Number(rate as f64)));
+    }
+    if let Some(description) = output.description.as_ref() {
+        variables.push(("description", Value::String(description.clone())));
     }
 
     Ok(variables)
