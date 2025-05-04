@@ -295,7 +295,7 @@ pub fn operator(input: &str) -> MResult<Op> {
 }
 
 /// Maps a tag string to a token.
-pub fn map_token<'i, T>(t: &'i str, token: T) -> impl FnMut(&'i str) -> MResult<T>
+pub fn map_token<'i, T>(t: &'i str, token: T) -> impl FnMut(&'i str) -> MResult<'i, T>
 where
     T: Copy,
 {
@@ -306,7 +306,7 @@ where
 /// the given keyword. Only succeeds if the read string exactly matches the
 /// keyword. This prevents 'anders' from being recognised as the keyword 'and',
 /// for instance.
-pub fn keyword<'i>(keyword: &'i str) -> impl FnMut(&'i str) -> MResult<&'i str> {
+pub fn keyword<'i>(keyword: &'i str) -> impl FnMut(&'i str) -> MResult<'i, &'i str> {
     map_parser(keyword_pattern, all_consuming(tag(keyword)))
 }
 

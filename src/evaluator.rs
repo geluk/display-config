@@ -95,9 +95,7 @@ impl Evaluator {
 
             let outcome = match (left, right) {
                 (Value::Number(l), Value::Number(r)) => match op {
-                    #[deny(clippy::clippy::float_cmp)]
                     CmpOp::Eq => l == r,
-                    #[deny(clippy::clippy::float_cmp)]
                     CmpOp::Neq => l != r,
                     CmpOp::Gt => l > r,
                     CmpOp::Lt => l < r,

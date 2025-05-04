@@ -13,7 +13,6 @@ use crate::lexer::{self, CmpOp, Literal, Op, Sep, Token};
 #[derive(Debug)]
 pub struct MatchRule {
     pub expression: Expr,
-    pub original_input: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -134,10 +133,7 @@ pub fn parse(input: &str) -> Result<MatchRule> {
     let expression = match_rule(tokens)?;
     trace!("Match rule parsed to: '{}'", expression);
 
-    Ok(MatchRule {
-        expression,
-        original_input: input.to_string(),
-    })
+    Ok(MatchRule { expression })
 }
 
 fn match_rule(tokens: Vec<Token>) -> Result<Expr> {

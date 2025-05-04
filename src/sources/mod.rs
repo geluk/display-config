@@ -22,6 +22,7 @@ pub enum Output {
 
 /// An output with an available monitor, connected to the display adapter.
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub struct ConnectedOutput {
     /// The XID of the output.
     pub id: Xid,
@@ -87,6 +88,7 @@ impl ConnectedOutput {
 /// A display mode, encoding information about the resolution and sync rates of
 /// an ouput.
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub struct Mode {
     pub id: Xid,
     pub resolution: Resolution,
@@ -96,16 +98,12 @@ pub struct Mode {
 impl Mode {
     /// Returns true if the given output is currently set to this mode.
     pub fn is_active_on(&self, output: &ConnectedOutput) -> bool {
-        output
-            .crtc
-            .as_ref()
-            .and_then(|c| c.mode.as_ref())
-            .map_or(false, |m| m == self)
+        output.crtc.as_ref().and_then(|c| c.mode.as_ref()) == Some(self)
     }
 
     /// Returns true if this mode is the preferred mode of the given output.
     pub fn is_preferred_by(&self, output: &ConnectedOutput) -> bool {
-        output.preferred_mode.as_ref().map_or(false, |m| m == self)
+        output.preferred_mode.as_ref() == Some(self)
     }
 }
 impl Eq for Mode {}
@@ -117,6 +115,7 @@ impl PartialEq for Mode {
 
 /// An output that is either disconnected or in an unknown state.
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub struct UnknownOutput {
     pub id: Xid,
     pub name: String,
@@ -125,6 +124,7 @@ pub struct UnknownOutput {
 /// A rectangle on the screen, which is directly visible on or more outputs.
 /// A CRTC defines a mode, which all connected outputs must support.
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub struct Crtc {
     id: Xid,
     dimensions: Rectangle,
@@ -176,6 +176,7 @@ impl Ord for Resolution {
 
 /// A rectangle, defined by its position, width, and height, in pixels.
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub struct Rectangle {
     pub x: i32,
     pub y: i32,

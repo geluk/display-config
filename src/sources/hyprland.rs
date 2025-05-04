@@ -42,7 +42,7 @@ impl OutputProvider for Hyprland {
     fn get_all_outputs(&self) -> anyhow::Result<Vec<Output>> {
         let outputs = self.get_connected_outputs()?;
 
-        Ok(outputs.into_iter().map(|o| Output::Connected(o)).collect())
+        Ok(outputs.into_iter().map(Output::Connected).collect())
     }
 }
 
@@ -65,6 +65,7 @@ fn get_from_hyprctl() -> Result<Vec<HyprctlMonitor>> {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(unused)]
 struct HyprctlMonitor {
     id: u32,
     name: String,
